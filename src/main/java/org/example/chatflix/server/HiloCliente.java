@@ -46,6 +46,23 @@ public class HiloCliente implements Runnable {
                     }
                     // -----------------------------------------
 
+                    // --- NUEVO: GESTIÓN DE USUARIOS CONECTADOS ---
+                    // 1. Avisar a TODOS de que he entrado
+                    Servidor.broadcast("STATUS|" + nombre + "|ON", this);
+
+                    // 2. Enviarme a MÍ la lista de los que ya están
+                    StringBuilder listaNombres = new StringBuilder();
+                    for (HiloCliente cliente : Servidor.clientesConectados) {
+                        if (cliente != this && cliente.usuario != null) {
+                            listaNombres.append(cliente.usuario.getNombre()).append(",");
+                        }
+                    }
+                    // Enviamos formato: LISTA_USUARIOS|Juan,Maria,Pepe
+                    if (listaNombres.length() > 0) {
+                        salida.writeUTF("LISTA_USUARIOS|" + listaNombres.toString());
+                    }
+                    // ---------------------------------------------
+
                     // BUCLE INFINITO DEL CHAT
                     while (true) {
                         String mensajeRecibido = entrada.readUTF();
@@ -68,6 +85,10 @@ public class HiloCliente implements Runnable {
         } catch (IOException e) {
             System.out.println("Cliente desconectado: " + (usuario != null ? usuario.getNombre() : "Anónimo"));
             Servidor.clientesConectados.remove(this); // Lo borramos de la lista
+            // --- NUEVO: AVISAR A TODOS DE LA DESCONEXIÓN ---
+            if (this.usuario != null) {
+                Servidor.broadcast("STATUS|" + this.usuario.getNombre() + "|OFF", this);
+            }
         }
     }
 

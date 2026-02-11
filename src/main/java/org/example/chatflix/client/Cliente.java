@@ -29,6 +29,7 @@ public class Cliente extends Application {
     // Componentes del Chat (Para poder modificarlos luego)
     private TextArea areaMensajes;
     private TextField campoMensaje;
+    private ListView<String> listaUsuarios;
 
     @Override
     public void start(Stage stage) {
@@ -93,10 +94,10 @@ public class Cliente extends Application {
         panelInferior.setPadding(new Insets(10));
         panelInferior.setAlignment(Pos.CENTER);
 
-        // 3. Panel Izquierdo (Lista de Contactos - Simulado por ahora)
-        ListView<String> listaUsuarios = new ListView<>();
-        listaUsuarios.getItems().addAll("Chat General", "Usuario 1", "Usuario 2");
-        listaUsuarios.setPrefWidth(100);
+        // 3. Panel Izquierdo (Lista de Contactos)
+        listaUsuarios = new ListView<>();
+        listaUsuarios.getItems().add("Chat General");
+        listaUsuarios.setPrefWidth(120);
 
         // 4. Montaje final (BorderPane es ideal para esto)
         BorderPane root = new BorderPane();
@@ -140,10 +141,43 @@ public class Cliente extends Application {
                                 while (true) {
                                     String mensajeServer = entrada.readUTF();
 
+                                    // CASO 1: MENSAJE DE CHAT
                                     if (mensajeServer.startsWith("MSG|")) {
                                         String texto = mensajeServer.substring(4);
-                                        // Actualizar la interfaz (JavaFX requiere Platform.runLater)
                                         Platform.runLater(() -> areaMensajes.appendText(texto + "\n"));
+                                    }
+
+                                    // CASO 2: ALGUIEN CAMBIA DE ESTADO (ENTRA/SALE)
+                                    else if (mensajeServer.startsWith("STATUS|")) {
+                                        String[] partes = mensajeServer.split("\\|");
+                                        String nombre = partes[1];
+                                        String estado = partes[2]; // ON o OFF
+
+                                        Platform.runLater(() -> {
+                                            if (estado.equals("ON")) {
+                                                if (!listaUsuarios.getItems().contains(nombre)) {
+                                                    listaUsuarios.getItems().add(nombre);
+                                                    areaMensajes.appendText(">>> " + nombre + " se ha conectado.\n");
+                                                }
+                                            } else {
+                                                listaUsuarios.getItems().remove(nombre);
+                                                areaMensajes.appendText("<<< " + nombre + " se ha desconectado.\n");
+                                            }
+                                        });
+                                    }
+
+                                    // CASO 3: RECIBIR LISTA INICIAL
+                                    else if (mensajeServer.startsWith("LISTA_USUARIOS|")) {
+                                        String lista = mensajeServer.substring(15); // Quitamos la cabecera
+                                        String[] nombres = lista.split(",");
+
+                                        Platform.runLater(() -> {
+                                            for (String nombre : nombres) {
+                                                if (!listaUsuarios.getItems().contains(nombre)) {
+                                                    listaUsuarios.getItems().add(nombre);
+                                                }
+                                            }
+                                        });
                                     }
                                 }
                             } catch (IOException e) {
