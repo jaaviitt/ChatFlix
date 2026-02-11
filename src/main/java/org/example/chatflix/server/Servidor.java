@@ -3,32 +3,43 @@ package org.example.chatflix.server;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Servidor {
+    private static final int PUERTO = 12345;
 
-    private static final int PUERTO = 12345; // Puerto donde escuchará el servidor
+    // LISTA DE CLIENTES CONECTADOS (Para poder enviar mensajes a todos)
+    public static List<HiloCliente> clientesConectados = new ArrayList<>();
 
     public static void main(String[] args) {
-        System.out.println("--- Iniciando Servidor ---");
-
-        // 1. Inicializar la Base de Datos (Requisito indispensable)
-        System.out.println("Verificando base de datos...");
         GestorBaseDatos.inicializar();
 
-        // 2. Iniciar el Socket del Servidor (Requisito 3 - Sockets TCP)
         try (ServerSocket servidor = new ServerSocket(PUERTO)) {
-            System.out.println("Servidor esperando conexiones en el puerto " + PUERTO + "...");
+            System.out.println("Servidor ChatFlix escuchando en puerto " + PUERTO);
 
-            // Bucle infinito para aceptar clientes
             while (true) {
-                // El servidor se queda "congelado" aquí hasta que alguien se conecta
                 Socket cliente = servidor.accept();
-                System.out.println("¡Nuevo cliente conectado!: " + cliente.getInetAddress());
+                System.out.println("Nuevo cliente conectado.");
 
-                // AQUÍ LANZAREMOS EL HILO MÁS ADELANTE (Requisito Multihilo)
+                // Creamos el hilo
+                HiloCliente hilo = new HiloCliente(cliente);
+
+                // Lo guardamos en la lista
+                clientesConectados.add(hilo);
+
+                new Thread(hilo).start();
             }
         } catch (IOException e) {
-            System.err.println("Error en el servidor: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    // Método para enviar un mensaje a TODOS (Broadcast)
+    public static void broadcast(String mensaje, HiloCliente remitente) {
+        for (HiloCliente cliente : clientesConectados) {
+            // Opcional: Si no quieres que te llegue tu propio mensaje, pon un if aquí
+            cliente.enviarMensaje(mensaje);
         }
     }
 }

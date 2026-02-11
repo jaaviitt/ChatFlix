@@ -74,7 +74,14 @@ public class GestorBaseDatos {
 
             // Ejecutamos la creación de tablas
             stmt.executeUpdate(sql);
-            System.out.println("Base de datos verificada/creada correctamente.");
+            // CREAR DATOS POR DEFECTO ---
+            // 1. Creamos un usuario "System" (ID 1) para que sea el dueño del grupo
+            stmt.executeUpdate("INSERT OR IGNORE INTO usuarios (id_usuario, nombre_usuario, password_hash) VALUES (1, 'System', 'admin')");
+
+            // 2. Creamos el Grupo "Chat General" (ID 1)
+            stmt.executeUpdate("INSERT OR IGNORE INTO grupos (id_grupo, nombre_grupo, id_admin) VALUES (1, 'Chat General', 1)");
+
+            System.out.println("Base de datos verificada y Grupo General listo.");
 
         } catch (SQLException e) {
             System.out.println("Error al inicializar la base de datos: " + e.getMessage());
