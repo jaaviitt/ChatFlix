@@ -1,0 +1,16 @@
+# Archivos compilados
+target/
+*.class
+
+# Archivos de configuración de IntelliJ
+.idea/
+*.iml
+.mvn/
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Base de datos local (¡Importante no subirla!)
+*.db
+*.sqlite
