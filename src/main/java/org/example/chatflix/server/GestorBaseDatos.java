@@ -7,13 +7,11 @@ import java.sql.Statement;
 
 public class GestorBaseDatos {
 
-    // Nombre del archivo de la base de datos
     private static final String URL = "jdbc:sqlite:chat_proyecto.db";
 
     public static void inicializar() {
-        // SQL para crear las tablas requeridas por el proyecto
+        // SQL unificado para crear la infraestructura (Requisitos 2.1 a 2.4)
         String sql = """
-            -- Tabla de Usuarios (Requisito 2.1)
             CREATE TABLE IF NOT EXISTS usuarios (
                 id_usuario INTEGER PRIMARY KEY AUTOINCREMENT,
                 nombre_usuario TEXT UNIQUE NOT NULL,
@@ -21,7 +19,6 @@ public class GestorBaseDatos {
                 fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP
             );
             
-            -- Tabla de Contactos (Requisito 2.2)
             CREATE TABLE IF NOT EXISTS contactos (
                 id_usuario INTEGER,
                 id_contacto INTEGER,
@@ -31,7 +28,6 @@ public class GestorBaseDatos {
                 FOREIGN KEY (id_contacto) REFERENCES usuarios(id_usuario)
             );
 
-            -- Tabla de Grupos (Requisito 2.4)
             CREATE TABLE IF NOT EXISTS grupos (
                 id_grupo INTEGER PRIMARY KEY AUTOINCREMENT,
                 nombre_grupo TEXT NOT NULL,
@@ -40,7 +36,6 @@ public class GestorBaseDatos {
                 FOREIGN KEY (id_admin) REFERENCES usuarios(id_usuario)
             );
 
-            -- Miembros del Grupo
             CREATE TABLE IF NOT EXISTS miembros_grupo (
                 id_grupo INTEGER,
                 id_usuario INTEGER,
@@ -50,7 +45,6 @@ public class GestorBaseDatos {
                 FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario)
             );
 
-            -- Tabla Unificada de Mensajes (Requisitos 2.3 y 2.4)
             CREATE TABLE IF NOT EXISTS mensajes (
                 id_mensaje INTEGER PRIMARY KEY AUTOINCREMENT,
                 id_origen INTEGER NOT NULL,
@@ -72,24 +66,16 @@ public class GestorBaseDatos {
         try (Connection conn = DriverManager.getConnection(URL);
              Statement stmt = conn.createStatement()) {
 
-            // Ejecutamos la creación de tablas
+            // Creamos la estructura de tablas (sin insertar datos basura)
             stmt.executeUpdate(sql);
-            // CREAR DATOS POR DEFECTO ---
-            // 1. Creamos un usuario "System" (ID 1) para que sea el dueño del grupo
-            stmt.executeUpdate("INSERT OR IGNORE INTO usuarios (id_usuario, nombre_usuario, password_hash) VALUES (1, 'System', 'admin')");
-
-            // 2. Creamos el Grupo "Chat General" (ID 1)
-            stmt.executeUpdate("INSERT OR IGNORE INTO grupos (id_grupo, nombre_grupo, id_admin) VALUES (1, 'Chat General', 1)");
-
-            System.out.println("Base de datos verificada y Grupo General listo.");
+            System.out.println("Base de datos inicializada: Estructura de Usuarios y Grupos lista.");
 
         } catch (SQLException e) {
-            System.out.println("Error al inicializar la base de datos: " + e.getMessage());
+            System.err.println("Error al inicializar la base de datos: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
-    // Método para conectar (lo usaremos más adelante)
     public static Connection conectar() throws SQLException {
         return DriverManager.getConnection(URL);
     }

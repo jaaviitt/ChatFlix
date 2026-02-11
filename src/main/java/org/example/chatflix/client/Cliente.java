@@ -96,8 +96,16 @@ public class Cliente extends Application {
 
         // 3. Panel Izquierdo (Lista de Contactos)
         listaUsuarios = new ListView<>();
-        listaUsuarios.getItems().add("Chat General");
         listaUsuarios.setPrefWidth(120);
+
+        listaUsuarios.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null) {
+                areaMensajes.clear(); // Limpiamos la pantalla para el nuevo chat
+                try {
+                    salida.writeUTF("GET_HISTORIAL|" + newVal);
+                } catch (IOException e) { e.printStackTrace(); }
+            }
+        });
 
         // 4. Montaje final (BorderPane es ideal para esto)
         BorderPane root = new BorderPane();
@@ -110,6 +118,7 @@ public class Cliente extends Application {
         escenarioPrincipal.setScene(scene);
         // Centrar la ventana en la pantalla
         escenarioPrincipal.centerOnScreen();
+
     }
 
     // --- LÓGICA DE CONEXIÓN ---
@@ -203,13 +212,21 @@ public class Cliente extends Application {
 
     private void enviarMensaje() {
         String texto = campoMensaje.getText();
-        if (!texto.isEmpty()) {
+        String seleccionado = listaUsuarios.getSelectionModel().getSelectedItem(); // Quién está marcado en azul
+
+        if (!texto.isEmpty() && seleccionado != null) {
             try {
-                salida.writeUTF("MSG|" + texto);
+                if (seleccionado.equals("Chat General")) {
+                    salida.writeUTF("MSG|" + texto); // Mensaje para todos
+                } else {
+                    salida.writeUTF("PV|" + seleccionado + "|" + texto); // Mensaje privado
+                }
                 campoMensaje.clear();
             } catch (IOException e) {
-                areaMensajes.appendText("Error al enviar mensaje.\n");
+                areaMensajes.appendText("Error al enviar.\n");
             }
+        } else if (seleccionado == null) {
+            areaMensajes.appendText("Sistema: Selecciona a alguien de la lista para hablar.\n");
         }
     }
 

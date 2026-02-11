@@ -74,4 +74,16 @@ public class UsuarioDAO {
             throw new RuntimeException("Error al cifrar", e);
         }
     }
+    public int obtenerIdPorNombre(String nombre) {
+        String sql = "SELECT id_usuario FROM usuarios WHERE nombre_usuario = ?";
+        try (Connection conn = GestorBaseDatos.conectar();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, nombre);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) return rs.getInt("id_usuario");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return -1; // No encontrado
+    }
 }

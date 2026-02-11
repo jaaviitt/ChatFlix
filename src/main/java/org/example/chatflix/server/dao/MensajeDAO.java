@@ -7,52 +7,48 @@ import java.util.List;
 
 public class MensajeDAO {
 
-    // Guardar un mensaje nuevo en la BD (Asignado al Grupo 1 - General)
-    public void guardarMensaje(int idOrigen, String contenido) {
-        // OJO: Añadimos 'id_destino_grupo' en la consulta
-        String sql = "INSERT INTO mensajes (id_origen, id_destino_grupo, contenido, fecha_envio) VALUES (?, 1, ?, CURRENT_TIMESTAMP)";
+    public void guardarMensajePrivado(int idOrigen, int idDestino, String contenido) {
+        // IMPORTANTE: Ponemos id_destino_grupo a NULL explícitamente
+        String sql = "INSERT INTO mensajes (id_origen, id_destino_usuario, id_destino_grupo, contenido) VALUES (?, ?, NULL, ?)";
 
         try (Connection conn = GestorBaseDatos.conectar();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
 
             pstmt.setInt(1, idOrigen);
-            // El 1 ya está puesto en la SQL (VALUES ..., 1, ...)
-            pstmt.setString(2, contenido);
-
+            pstmt.setInt(2, idDestino);
+            pstmt.setString(3, contenido);
             pstmt.executeUpdate();
-            System.out.println("Mensaje guardado en BD correctamente."); // Log para confirmar
+            System.out.println("DEBUG: Guardado mensaje de " + idOrigen + " a " + idDestino);
 
         } catch (SQLException e) {
-            System.err.println("Error al guardar mensaje: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
-    // Recuperar los últimos 50 mensajes (Historial)
-    public List<String> obtenerHistorial() {
+    public List<String> obtenerHistorialPrivado(int idYo, int idOtro) {
         List<String> historial = new ArrayList<>();
-        // Hacemos un JOIN para obtener el nombre del usuario que escribió el mensaje
+        // Busca mensajes enviados por MI a ÉL o por ÉL a MÍ
         String sql = """
             SELECT u.nombre_usuario, m.contenido 
             FROM mensajes m 
             JOIN usuarios u ON m.id_origen = u.id_usuario 
-            ORDER BY m.fecha_envio ASC 
-            LIMIT 50
+            WHERE (m.id_origen = ? AND m.id_destino_usuario = ?) 
+               OR (m.id_origen = ? AND m.id_destino_usuario = ?)
+            ORDER BY m.fecha_envio ASC
         """;
 
         try (Connection conn = GestorBaseDatos.conectar();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, idYo);
+            pstmt.setInt(2, idOtro);
+            pstmt.setInt(3, idOtro);
+            pstmt.setInt(4, idYo);
 
+            ResultSet rs = pstmt.executeQuery();
             while (rs.next()) {
-                String nombre = rs.getString("nombre_usuario");
-                String texto = rs.getString("contenido");
-                historial.add(nombre + ": " + texto);
+                historial.add("(PV) " + rs.getString("nombre_usuario") + ": " + rs.getString("contenido"));
             }
-
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
+        } catch (SQLException e) { e.printStackTrace(); }
         return historial;
     }
 }

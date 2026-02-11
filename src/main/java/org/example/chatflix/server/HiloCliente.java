@@ -1,11 +1,11 @@
 package org.example.chatflix.server;
 
-import org.example.chatflix.model.Usuario;
+import org.example.chatflix.server.dao.MensajeDAO;
 import org.example.chatflix.server.dao.UsuarioDAO;
+import org.example.chatflix.model.Usuario;
 import java.io.*;
 import java.net.Socket;
-
-import org.example.chatflix.server.dao.MensajeDAO;
+import java.util.List; // IMPORTANTE
 
 public class HiloCliente implements Runnable {
 
@@ -13,6 +13,10 @@ public class HiloCliente implements Runnable {
     private DataInputStream entrada;
     private DataOutputStream salida;
     private Usuario usuario;
+
+    // Instancias DAO
+    private UsuarioDAO uDao = new UsuarioDAO();
+    private MensajeDAO mDao = new MensajeDAO();
 
     public HiloCliente(Socket socket) {
         this.socket = socket;
@@ -24,58 +28,70 @@ public class HiloCliente implements Runnable {
             entrada = new DataInputStream(socket.getInputStream());
             salida = new DataOutputStream(socket.getOutputStream());
 
-            // 1. FASE LOGIN
+            // --- FASE LOGIN ---
             String mensaje = entrada.readUTF();
             if (mensaje.startsWith("LOGIN|")) {
                 String[] partes = mensaje.split("\\|");
-                String nombre = partes[1];
-                String pass = partes[2];
-
-                UsuarioDAO dao = new UsuarioDAO();
-                Usuario u = dao.loginOregistrar(nombre, pass);
+                Usuario u = uDao.loginOregistrar(partes[1], partes[2]);
 
                 if (u != null) {
                     this.usuario = u;
                     salida.writeUTF("LOGIN_OK|" + u.getId());
-                    System.out.println("Usuario logueado: " + nombre);
 
-                    // --- NUEVO: ENVIAR HISTORIAL AL ENTRAR ---
-                    MensajeDAO mensajeDAO = new MensajeDAO(); // Creamos el DAO
-                    for (String msgAntiguo : mensajeDAO.obtenerHistorial()) {
-                        salida.writeUTF("MSG|" + msgAntiguo); // Se lo mandamos al cliente
-                    }
-                    // -----------------------------------------
+                    // AVISAR A TODOS (Broadcast de estado)
+                    Servidor.broadcast("STATUS|" + usuario.getNombre() + "|ON", this);
 
-                    // --- NUEVO: GESTIÓN DE USUARIOS CONECTADOS ---
-                    // 1. Avisar a TODOS de que he entrado
-                    Servidor.broadcast("STATUS|" + nombre + "|ON", this);
-
-                    // 2. Enviarme a MÍ la lista de los que ya están
-                    StringBuilder listaNombres = new StringBuilder();
+                    // ENVIARME LA LISTA DE CONECTADOS (Sin Chat General)
+                    StringBuilder sb = new StringBuilder();
                     for (HiloCliente cliente : Servidor.clientesConectados) {
                         if (cliente != this && cliente.usuario != null) {
-                            listaNombres.append(cliente.usuario.getNombre()).append(",");
+                            sb.append(cliente.usuario.getNombre()).append(",");
                         }
                     }
-                    // Enviamos formato: LISTA_USUARIOS|Juan,Maria,Pepe
-                    if (listaNombres.length() > 0) {
-                        salida.writeUTF("LISTA_USUARIOS|" + listaNombres.toString());
+                    if (sb.length() > 0) {
+                        salida.writeUTF("LISTA_USUARIOS|" + sb.toString());
                     }
-                    // ---------------------------------------------
 
-                    // BUCLE INFINITO DEL CHAT
+                    // --- BUCLE DEL CHAT ---
                     while (true) {
                         String mensajeRecibido = entrada.readUTF();
 
-                        if (mensajeRecibido.startsWith("MSG|")) {
-                            String texto = mensajeRecibido.substring(4);
-                            String mensajeFinal = this.usuario.getNombre() + ": " + texto;
+                        if (mensajeRecibido.startsWith("PV|")) {
+                            // FORMATO: PV|Destinatario|Contenido
+                            String[] seg = mensajeRecibido.split("\\|", 3);
+                            String destino = seg[1];
+                            String texto = seg[2];
 
-                            // --- NUEVO: GUARDAR EN BD ANTES DE ENVIAR ---
-                            mensajeDAO.guardarMensaje(this.usuario.getId(), texto);
-                            // --------------------------------------------
+                            int idDest = uDao.obtenerIdPorNombre(destino);
 
-                            Servidor.broadcast("MSG|" + mensajeFinal, this);
+                            if (idDest != -1) {
+                                // 1. GUARDAR EN BD (Persistencia)
+                                mDao.guardarMensajePrivado(this.usuario.getId(), idDest, texto);
+
+                                // 2. ENVIAR A DESTINATARIO SI ESTÁ ONLINE
+                                String outMsg = "(PV) " + this.usuario.getNombre() + ": " + texto;
+                                boolean enviado = false;
+                                for (HiloCliente h : Servidor.clientesConectados) {
+                                    if (h.usuario != null && h.usuario.getNombre().equals(destino)) {
+                                        h.enviarMensaje("MSG|" + outMsg);
+                                        enviado = true;
+                                        break;
+                                    }
+                                }
+                                // 3. ENVIARME A MÍ MISMO (Para verlo en pantalla)
+                                this.enviarMensaje("MSG|" + outMsg);
+                            }
+                        }
+                        else if (mensajeRecibido.startsWith("GET_HISTORIAL|")) {
+                            String nombreOtro = mensajeRecibido.split("\\|")[1];
+                            int idOtro = uDao.obtenerIdPorNombre(nombreOtro);
+
+                            if (idOtro != -1) {
+                                List<String> historial = mDao.obtenerHistorialPrivado(this.usuario.getId(), idOtro);
+                                for (String m : historial) {
+                                    enviarMensaje("MSG|" + m);
+                                }
+                            }
                         }
                     }
                 } else {
@@ -83,21 +99,15 @@ public class HiloCliente implements Runnable {
                 }
             }
         } catch (IOException e) {
-            System.out.println("Cliente desconectado: " + (usuario != null ? usuario.getNombre() : "Anónimo"));
-            Servidor.clientesConectados.remove(this); // Lo borramos de la lista
-            // --- NUEVO: AVISAR A TODOS DE LA DESCONEXIÓN ---
-            if (this.usuario != null) {
-                Servidor.broadcast("STATUS|" + this.usuario.getNombre() + "|OFF", this);
-            }
+            Servidor.clientesConectados.remove(this);
+            if (usuario != null) Servidor.broadcast("STATUS|" + usuario.getNombre() + "|OFF", this);
         }
     }
 
-    // Método que usará el Servidor para enviarnos cosas
-    public void enviarMensaje(String texto) {
-        try {
-            salida.writeUTF(texto);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    public void enviarMensaje(String msg) {
+        try { salida.writeUTF(msg); } catch (IOException e) {}
+    }
+    public String getNombreUsuario() {
+        return (usuario != null) ? usuario.getNombre() : null;
     }
 }
