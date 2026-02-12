@@ -1,0 +1,31 @@
+/* Fondo de la ventana de chat */
+.root {
+    -fx-font-family: "Segoe UI", sans-serif;
+    -fx-font-size: 14px;
+}
+
+/* Burbuja para MIS mensajes (Verde, a la derecha) */
+.burbuja-enviada {
+    -fx-background-color: #dcf8c6; /* Verde WhatsApp */
+    -fx-background-radius: 15;
+    -fx-padding: 10px;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.2), 3, 0, 1, 1);
+    -fx-font-weight: bold;
+}
+
+/* Burbuja para LOS OTROS mensajes (Blanco, a la izquierda) */
+.burbuja-recibida {
+    -fx-background-color: #ffffff;
+    -fx-background-radius: 15;
+    -fx-padding: 10px;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.2), 3, 0, 1, 1);
+}
+
+/* El fondo del área de chat */
+.scroll-pane {
+    -fx-background: #ece5dd; /* Color beige típico de chats */
+    -fx-border-color: transparent;
+}
+.scroll-pane > .viewport {
+    -fx-background-color: #ece5dd;
+}

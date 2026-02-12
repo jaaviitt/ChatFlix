@@ -94,12 +94,16 @@ public class HiloCliente implements Runnable {
                                 this.enviarMensaje("MSG|" + outMsg);
                             }
                         }
+                        // BLOQUE 2: HISTORIAL PRIVADO
                         else if (mensajeRecibido.startsWith("GET_HISTORIAL|")) {
                             String nombreOtro = mensajeRecibido.split("\\|")[1];
                             int idOtro = uDao.obtenerIdPorNombre(nombreOtro);
+
                             if (idOtro != -1) {
+                                // Obtenemos la lista bruta de la BD
                                 List<String> historial = mDao.obtenerHistorialPrivado(this.usuario.getId(), idOtro);
-                                for (String m : historial) enviarMensaje("MSG|" + m);
+                                // Se la pasamos al "limpiador" que envía textos o fotos según toque
+                                enviarHistorialConFotos(historial);
                             }
                         }
                         else if (mensajeRecibido.startsWith("CREAR_GRUPO|")) {
@@ -150,12 +154,69 @@ public class HiloCliente implements Runnable {
                                 }
                             }
                         }
+                        // BLOQUE 3: HISTORIAL GRUPO CON FOTOS
                         else if (mensajeRecibido.startsWith("GET_HISTORIAL_GRUPO|")) {
                             String nombreGrupo = mensajeRecibido.split("\\|")[1];
                             int idGrupo = gDao.obtenerIdPorNombre(nombreGrupo);
+
                             if (idGrupo != -1) {
                                 List<String> historial = mDao.obtenerHistorialGrupo(idGrupo);
-                                for (String msg : historial) enviarMensaje("MSG|" + msg);
+                                enviarHistorialConFotos(historial); // Método auxiliar abajo
+                            }
+                        }
+                        // BLOQUE 1: RECEPCIÓN Y GUARDADO DE ARCHIVOS
+                        else if (mensajeRecibido.startsWith("FILE|")) {
+                            String[] partesFile = mensajeRecibido.split("\\|");
+                            String destinoNombre = partesFile[1];
+                            String nombreFichero = partesFile[2];
+                            int tamano = Integer.parseInt(partesFile[3]);
+
+                            byte[] buffer = new byte[tamano];
+                            entrada.readFully(buffer);
+
+                            // 1. GUARDAR EN DISCO (Carpeta uploads)
+                            File folder = new File("uploads");
+                            if (!folder.exists()) folder.mkdir();
+
+                            // Nombre único para evitar sobrescribir
+                            String nombreUnico = System.currentTimeMillis() + "_" + nombreFichero;
+                            try (FileOutputStream fos = new FileOutputStream(new File(folder, nombreUnico))) {
+                                fos.write(buffer);
+                            }
+
+                            // 2. VERIFICAR SI ES GRUPO O USUARIO
+                            int idGrupo = gDao.obtenerIdPorNombre(destinoNombre); // Probamos si es grupo
+
+                            if (idGrupo != -1) {
+                                // --- ES UN GRUPO ---
+                                // A. Guardar en BD como mensaje de grupo
+                                mDao.guardarMensajeEnGrupo(this.usuario.getId(), idGrupo, "IMG:" + nombreUnico);
+
+                                // B. Reenviar a los miembros conectados
+                                List<Integer> miembrosIds = gDao.obtenerIdsMiembros(idGrupo);
+                                for (HiloCliente hc : Servidor.clientesConectados) {
+                                    // Enviamos a todos MENOS a mí mismo (yo ya la veo porque la acabo de subir)
+                                    if (hc.usuario != null && miembrosIds.contains(hc.usuario.getId())
+                                            && hc.usuario.getId() != this.usuario.getId()) {
+
+                                        hc.enviarMensajeConArchivo(this.usuario.getNombre(), nombreUnico, buffer);
+                                    }
+                                }
+                            } else {
+                                // --- ES UN USUARIO PRIVADO ---
+                                int idDestino = uDao.obtenerIdPorNombre(destinoNombre);
+                                if (idDestino != -1) {
+                                    // A. Guardar en BD privado
+                                    mDao.guardarMensajePrivado(this.usuario.getId(), idDestino, "IMG:" + nombreUnico);
+
+                                    // B. Reenviar al destinatario si está online
+                                    for (HiloCliente hc : Servidor.clientesConectados) {
+                                        if (hc.usuario != null && hc.usuario.getNombre().equals(destinoNombre)) {
+                                            hc.enviarMensajeConArchivo(this.usuario.getNombre(), nombreUnico, buffer);
+                                            break;
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -166,6 +227,53 @@ public class HiloCliente implements Runnable {
         } catch (IOException e) {
             Servidor.clientesConectados.remove(this);
             if (usuario != null) Servidor.broadcast("STATUS|" + usuario.getNombre() + "|OFF", this);
+        }
+    }
+
+    public void enviarMensajeConArchivo(String remitente, String nombreFichero, byte[] contenido) {
+        try {
+            // 1. Avisamos al cliente: "Oye, te va un archivo de este remitente y este tamaño"
+            salida.writeUTF("FILE_RECIBIDO|" + remitente + "|" + nombreFichero + "|" + contenido.length);
+
+            // 2. Mandamos los bytes puros justo después
+            salida.write(contenido);
+            salida.flush();
+
+            System.out.println("Servidor: Enviando " + nombreFichero + " de " + remitente + " a " + this.usuario.getNombre());
+        } catch (IOException e) {
+            System.err.println("Error al enviar archivo al cliente: " + e.getMessage());
+        }
+    }
+
+    // Método auxiliar para procesar el historial y detectar imágenes
+    private void enviarHistorialConFotos(List<String> historial) {
+        for (String msg : historial) {
+            // El formato de msg viene del DAO: "Nombre: Contenido" o "(Grp) Nombre: Contenido"
+            // Buscamos si el contenido tiene la marca "IMG:"
+            if (msg.contains(": IMG:")) {
+                try {
+                    // Separamos: [0] -> "Pepe", [1] -> "IMG:1234_foto.jpg"
+                    String[] partes = msg.split(": IMG:");
+                    String remitenteCompleto = partes[0]; // Puede ser "Pepe" o "(PV) Pepe"
+                    String nombreArchivo = partes[1].trim();
+
+                    // Limpiamos el nombre del remitente para que quede limpio en la burbuja
+                    String remitenteLimpio = remitenteCompleto.replace("(PV) ", "").replace("(Grp) ", "").trim();
+
+                    File f = new File("uploads/" + nombreArchivo);
+                    if (f.exists()) {
+                        byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
+                        enviarMensajeConArchivo(remitenteLimpio, nombreArchivo, bytes);
+                    } else {
+                        enviarMensaje("MSG|Sistema: La imagen " + nombreArchivo + " no se encuentra en el servidor.");
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            } else {
+                // Es texto normal
+                enviarMensaje("MSG|" + msg);
+            }
         }
     }
 

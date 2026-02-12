@@ -9,6 +9,7 @@ import javafx.scene.control.*;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
+import javafx.scene.layout.Priority;
 import javafx.stage.Stage;
 import javafx.collections.ObservableList;
 import javafx.scene.control.SelectionMode;
@@ -23,14 +24,16 @@ public class Cliente extends Application {
 
     private Stage escenarioPrincipal;
 
-    // VARIABLES GLOBALES DE CONEXIÓN (Para usarlas en el chat)
+    // VARIABLES GLOBALES DE CONEXIÓN
     private Socket socket;
     private DataOutputStream salida;
     private DataInputStream entrada;
-    private String nombreUsuario; // Guardamos quiénes somos
+    private String nombreUsuario; // Aquí guardamos tu nombre
 
-    // Componentes del Chat (Para poder modificarlos luego)
-    private TextArea areaMensajes;
+    // COMPONENTES DE LA NUEVA INTERFAZ (Burbujas)
+    private ScrollPane scrollMensajes;   // La ventana con scroll
+    private VBox contenedorMensajes;     // La caja donde se apilan los mensajes
+
     private TextField campoMensaje;
     private ListView<String> listaUsuarios;
 
@@ -76,56 +79,67 @@ public class Cliente extends Application {
         escenarioPrincipal.show();
     }
 
-    // --- PANTALLA 2: CHAT PRINCIPAL (NUEVO) ---
+    // --- PANTALLA 2: CHAT PRINCIPAL (MODIFICADO PARA BURBUJAS) ---
     private void mostrarVentanaChat() {
-        // 1. Panel Central (Historial de mensajes)
-        areaMensajes = new TextArea();
-        areaMensajes.setEditable(false); // Que no se pueda borrar lo escrito
-        areaMensajes.setWrapText(true);
+        // 1. ZONA DE MENSAJES (NUEVA: ScrollPane + VBox)
+        contenedorMensajes = new VBox(10); // 10px de espacio entre burbujas
+        contenedorMensajes.setPadding(new Insets(15)); // Margen interno
+
+        scrollMensajes = new ScrollPane(contenedorMensajes);
+        scrollMensajes.setFitToWidth(true); // Que las burbujas se adapten al ancho
+        scrollMensajes.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER); // Sin scroll horizontal
+
+        // IMPORTANTE: Cargar el CSS
+        try {
+            String css = this.getClass().getResource("/estilos.css").toExternalForm();
+            scrollMensajes.getStylesheets().add(css);
+        } catch (Exception e) {
+            System.out.println("Error cargando CSS: " + e.getMessage());
+        }
 
         // 2. Panel Inferior (Escribir mensaje)
         campoMensaje = new TextField();
         campoMensaje.setPromptText("Escribe un mensaje...");
-        // Hacemos que el campo ocupe todo el ancho posible
         campoMensaje.setPrefWidth(300);
 
         Button btnEnviar = new Button("Enviar");
-        // Acción al pulsar enviar (Por ahora solo visual)
         btnEnviar.setOnAction(e -> enviarMensaje());
 
-        HBox panelInferior = new HBox(10, campoMensaje, btnEnviar);
-        panelInferior.setPadding(new Insets(10));
+        Button btnAdjuntar = new Button("📎");
+        btnAdjuntar.setOnAction(e -> enviarArchivo());
+
+        Button btnEmoji = new Button("😀");
+        btnEmoji.setOnAction(e -> mostrarSelectorEmojis());
+
+        HBox panelInferior = new HBox(5, btnAdjuntar, btnEmoji, campoMensaje, btnEnviar);        panelInferior.setPadding(new Insets(10));
         panelInferior.setAlignment(Pos.CENTER);
 
         // 3. Panel Izquierdo (Lista de Contactos)
         listaUsuarios = new ListView<>();
-        listaUsuarios.setPrefWidth(120);
+        listaUsuarios.setPrefWidth(150);
 
         // Listener para cargar historial al hacer clic
         listaUsuarios.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null) {
-                areaMensajes.clear();
+                // LIMPIEZA DE PANTALLA (NUEVO MÉTODO)
+                contenedorMensajes.getChildren().clear();
+
                 try {
+                    String nombreLimpio;
                     if (newVal.startsWith("[Grupo] ")) {
-                        // Es un grupo: extraemos el nombre real
                         String nombreGrupo = newVal.replace("[Grupo] ", "");
                         salida.writeUTF("GET_HISTORIAL_GRUPO|" + nombreGrupo);
                     } else {
-                        // Es un usuario: limpiamos el (Online/Offline) y pedimos historial PV
                         String nombreUser = newVal.split(" \\(")[0];
                         salida.writeUTF("GET_HISTORIAL|" + nombreUser);
                     }
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+                } catch (IOException e) { e.printStackTrace(); }
             }
         });
 
-        // 1. Creamos el botón
+        // Botón Crear Grupo
         Button btnCrearGrupo = new Button("Crear Grupo");
-        btnCrearGrupo.setMaxWidth(Double.MAX_VALUE); // Para que ocupe todo el ancho
-
-        // 2. Le damos la funcionalidad (el diálogo que pide el nombre)
+        btnCrearGrupo.setMaxWidth(Double.MAX_VALUE);
         btnCrearGrupo.setOnAction(e -> {
             TextInputDialog dialog = new TextInputDialog();
             dialog.setTitle("Nuevo Grupo");
@@ -135,21 +149,18 @@ public class Cliente extends Application {
             dialog.showAndWait().ifPresent(nombreG -> {
                 if (!nombreG.trim().isEmpty()) {
                     try {
-                        // 1. Creamos el grupo en el servidor
                         salida.writeUTF("CREAR_GRUPO|" + nombreG.trim());
 
-                        // 2. Paso 2: Ventana para elegir miembros
+                        // Selección múltiple para invitar
                         Stage stageInvite = new Stage();
                         stageInvite.setTitle("Invitar a " + nombreG);
 
-                        // Creamos una lista con los usuarios actuales
                         ListView<String> listaParaInvitar = new ListView<>();
                         for(String s : listaUsuarios.getItems()) {
                             if(!s.startsWith("[Grupo]")) {
                                 listaParaInvitar.getItems().add(s.split(" \\(")[0]);
                             }
                         }
-                        // Habilitamos selección múltiple
                         listaParaInvitar.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
 
                         Button btnAceptar = new Button("Invitar Seleccionados");
@@ -163,8 +174,8 @@ public class Cliente extends Application {
                             stageInvite.close();
                         });
 
-                        VBox layout = new VBox(10, new Label("Mantén CTRL para elegir varios:"), listaParaInvitar, btnAceptar);
-                        layout.setPadding(new javafx.geometry.Insets(10));
+                        VBox layout = new VBox(10, new Label("Elige usuarios (CTRL+Click):"), listaParaInvitar, btnAceptar);
+                        layout.setPadding(new Insets(10));
                         stageInvite.setScene(new Scene(layout, 250, 300));
                         stageInvite.show();
 
@@ -173,31 +184,21 @@ public class Cliente extends Application {
             });
         });
 
-        // 3. ¡ESTA ES LA PARTE CLAVE!
-        // Asegúrate de que añades el botón al VBox (panelIzquierdo)
-        VBox panelIzquierdo = new VBox(10); // El '10' es el espacio entre elementos
-        panelIzquierdo.setPadding(new javafx.geometry.Insets(10));
-        panelIzquierdo.getChildren().addAll(
-                new Label("Contactos y Grupos:"),
-                listaUsuarios,
-                btnCrearGrupo
-        );
-        // Esto obliga a la lista a expandirse y empujar al botón hacia abajo
-        VBox.setVgrow(listaUsuarios, javafx.scene.layout.Priority.ALWAYS);
+        VBox panelIzquierdo = new VBox(10);
+        panelIzquierdo.setPadding(new Insets(10));
+        panelIzquierdo.getChildren().addAll(new Label("Contactos:"), listaUsuarios, btnCrearGrupo);
+        VBox.setVgrow(listaUsuarios, Priority.ALWAYS);
 
-        // 4. Montaje final (BorderPane es ideal para esto)
+        // Montaje final
         BorderPane root = new BorderPane();
-        root.setCenter(areaMensajes);
+        root.setCenter(scrollMensajes); // AQUÍ VA EL NUEVO SCROLLPANE
         root.setBottom(panelInferior);
-
         root.setLeft(panelIzquierdo);
 
-        Scene scene = new Scene(root, 600, 400);
+        Scene scene = new Scene(root, 700, 500); // Un poco más grande para que luzca
         escenarioPrincipal.setTitle("ChatFlix - Usuario: " + nombreUsuario);
         escenarioPrincipal.setScene(scene);
-        // Centrar la ventana en la pantalla
         escenarioPrincipal.centerOnScreen();
-
     }
 
     // --- LÓGICA DE CONEXIÓN ---
@@ -207,68 +208,48 @@ public class Cliente extends Application {
 
         new Thread(() -> {
             try {
-                // Guardamos la conexión en las variables globales
                 socket = new Socket("localhost", 12345);
                 salida = new DataOutputStream(socket.getOutputStream());
                 entrada = new DataInputStream(socket.getInputStream());
 
-                // Enviar Login
                 salida.writeUTF("LOGIN|" + user + "|" + pass);
-
-                // Esperar respuesta
                 String respuesta = entrada.readUTF();
 
                 Platform.runLater(() -> {
                     if (respuesta.startsWith("LOGIN_OK")) {
-                        // ¡ÉXITO! Guardamos el nombre y cambiamos de pantalla
-                        this.nombreUsuario = user;
-                        mostrarVentanaChat(); // <--- AQUÍ OCURRE LA MAGIA
+                        this.nombreUsuario = user; // Guardamos el nombre aquí
+                        mostrarVentanaChat();
 
+                        // HILO DE ESCUCHA
                         new Thread(() -> {
                             try {
                                 while (true) {
                                     String mensajeServer = entrada.readUTF();
 
-                                    // CASO 1: MENSAJE DE CHAT
+                                    // CASO 1: MENSAJE DE CHAT -> BURBUJA
                                     if (mensajeServer.startsWith("MSG|")) {
                                         String texto = mensajeServer.substring(4);
-                                        Platform.runLater(() -> areaMensajes.appendText(texto + "\n"));
+                                        // Usamos el nuevo método de burbujas
+                                        agregarMensaje(texto);
                                     }
-
-                                    // CASO 2: ALGUIEN CAMBIA DE ESTADO
                                     else if (mensajeServer.startsWith("STATUS|")) {
                                         String[] partes = mensajeServer.split("\\|");
-                                        String nombre = partes[1];
-                                        String estado = partes[2]; // ON u OFF
-
-                                        Platform.runLater(() -> actualizarListaUsuarios(nombre, estado));
+                                        Platform.runLater(() -> actualizarListaUsuarios(partes[1], partes[2]));
                                     }
-
-                                    // CASO 3: RECIBIR LISTA INICIAL COMPLETA
                                     else if (mensajeServer.startsWith("LISTA_USUARIOS|")) {
                                         String lista = mensajeServer.substring(15);
-                                        String[] usuariosConEstado = lista.split(",");
-
                                         Platform.runLater(() -> {
-                                            listaUsuarios.getItems().clear(); // Limpiamos para evitar duplicados
-                                            for (String userStr : usuariosConEstado) {
-                                                // userStr viene como "Pepe:ON"
+                                            listaUsuarios.getItems().clear();
+                                            for (String userStr : lista.split(",")) {
                                                 String[] data = userStr.split(":");
-                                                String nombre = data[0];
-                                                String estado = data[1];
-                                                actualizarListaUsuarios(nombre, estado);
+                                                actualizarListaUsuarios(data[0], data[1]);
                                             }
                                         });
                                     }
-                                    // CASO 4: CREAR GRUPO
                                     else if (mensajeServer.startsWith("GRUPO_CREADO|")) {
                                         String nombreGrupo = mensajeServer.split("\\|")[1];
-                                        Platform.runLater(() -> {
-                                            // Lo añadimos con un prefijo para distinguirlo
-                                            listaUsuarios.getItems().add(0, "[Grupo] " + nombreGrupo);
-                                        });
+                                        Platform.runLater(() -> listaUsuarios.getItems().add(0, "[Grupo] " + nombreGrupo));
                                     }
-                                    // CASO 5: INVITAR AL GRUPO
                                     else if (mensajeServer.startsWith("GRUPO_INVITACION|")) {
                                         String nombreG = mensajeServer.split("\\|")[1];
                                         Platform.runLater(() -> {
@@ -277,9 +258,19 @@ public class Cliente extends Application {
                                             }
                                         });
                                     }
+                                    else if (mensajeServer.startsWith("FILE_RECIBIDO|")) {
+                                        String[] p = mensajeServer.split("\\|");
+                                        String deQuien = p[1];
+                                        String nombreArchivo = p[2];
+                                        int size = Integer.parseInt(p[3]);
+                                        byte[] data = new byte[size];
+                                        entrada.readFully(data);
+
+                                        agregarImagen(data, deQuien);
+                                    }
                                 }
                             } catch (IOException e) {
-                                Platform.runLater(() -> areaMensajes.appendText("Desconectado del servidor.\n"));
+                                Platform.runLater(() -> agregarMensaje("Sistema: Desconectado del servidor."));
                             }
                         }).start();
 
@@ -306,52 +297,159 @@ public class Cliente extends Application {
         if (!texto.isEmpty() && seleccionado != null) {
             try {
                 if (seleccionado.startsWith("[Grupo] ")) {
-                    // Si es un grupo, enviamos con el comando especial de grupo
                     String nombreGrupo = seleccionado.replace("[Grupo] ", "");
                     salida.writeUTF("PV_GRUPO|" + nombreGrupo + "|" + texto);
                 } else {
-                    // Si es un usuario, limpiamos el estado y enviamos PV normal
                     String nombreUser = seleccionado.split(" \\(")[0];
                     salida.writeUTF("PV|" + nombreUser + "|" + texto);
                 }
                 campoMensaje.clear();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+                // Nota: No añadimos el mensaje aquí manualmente, esperamos al eco del servidor
+            } catch (IOException e) { e.printStackTrace(); }
         }
     }
 
-    // Método auxiliar para gestionar la lista visualmente
+    private void enviarArchivo() {
+        String seleccionado = listaUsuarios.getSelectionModel().getSelectedItem();
+        if (seleccionado == null) {
+            agregarMensaje("Sistema: Selecciona a alguien antes de enviar un archivo.");
+            return;
+        }
+
+        javafx.stage.FileChooser fileChooser = new javafx.stage.FileChooser();
+        fileChooser.setTitle("Seleccionar Imagen");
+        fileChooser.getExtensionFilters().add(
+                new javafx.stage.FileChooser.ExtensionFilter("Imágenes", "*.png", "*.jpg", "*.jpeg")
+        );
+
+        java.io.File archivo = fileChooser.showOpenDialog(escenarioPrincipal);
+
+        if (archivo != null) {
+            // Ejecutamos en un hilo aparte para no congelar la pantalla mientras se lee el archivo
+            new Thread(() -> {
+                try {
+                    byte[] bytesArchivo = java.nio.file.Files.readAllBytes(archivo.toPath());
+                    String destino = seleccionado.split(" \\(")[0];
+                    if (seleccionado.startsWith("[Grupo] ")) {
+                        destino = seleccionado.replace("[Grupo] ", "");
+                    }
+
+                    // Enviamos el comando y luego los bytes
+                    salida.writeUTF("FILE|" + destino + "|" + archivo.getName() + "|" + bytesArchivo.length);
+                    salida.write(bytesArchivo);
+                    salida.flush();
+
+                    // Pintamos la imagen en nuestro chat
+                    Platform.runLater(() -> agregarImagen(bytesArchivo, "Yo"));
+
+                } catch (IOException ex) {
+                    ex.printStackTrace();
+                }
+            }).start();
+        }
+    }
+
+    private void agregarImagen(byte[] data, String remitente) {
+        Platform.runLater(() -> {
+            try {
+                javafx.scene.image.Image img = new javafx.scene.image.Image(new java.io.ByteArrayInputStream(data));
+                javafx.scene.image.ImageView vistaImagen = new javafx.scene.image.ImageView(img);
+                vistaImagen.setFitWidth(250);
+                vistaImagen.setPreserveRatio(true);
+
+                // CORRECCIÓN AQUÍ: Detectar si soy yo
+                boolean esMio = remitente.equals("Yo") || remitente.equals(nombreUsuario);
+
+                VBox contenedorBurbuja = new VBox(5, new Label(esMio ? "Yo" : remitente), vistaImagen);
+                contenedorBurbuja.getStyleClass().add(esMio ? "burbuja-enviada" : "burbuja-recibida");
+
+                HBox fila = new HBox(contenedorBurbuja);
+                fila.setAlignment(esMio ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
+
+                // Márgenes para separar de los bordes
+                if (esMio) HBox.setMargin(contenedorBurbuja, new Insets(5, 10, 5, 50));
+                else HBox.setMargin(contenedorBurbuja, new Insets(5, 50, 5, 10));
+
+                contenedorMensajes.getChildren().add(fila);
+                scrollMensajes.layout();
+                scrollMensajes.setVvalue(1.0);
+
+            } catch (Exception e) { e.printStackTrace(); }
+        });
+    }
+
+    private void mostrarSelectorEmojis() {
+        Stage emojiStage = new Stage();
+        String[] emojis = {"😀", "😂", "😍", "😎", "🤔", "👍", "🔥", "🚀", "🎉", "❤️"};
+
+        javafx.scene.layout.FlowPane pane = new javafx.scene.layout.FlowPane(5, 5);
+        pane.setPadding(new Insets(10));
+
+        for (String s : emojis) {
+            Button b = new Button(s);
+            b.setOnAction(e -> {
+                campoMensaje.appendText(s); // Lo añade al mensaje actual
+                emojiStage.close();
+            });
+            pane.getChildren().add(b);
+        }
+
+        emojiStage.setScene(new Scene(pane, 200, 100));
+        emojiStage.setTitle("Emojis");
+        emojiStage.show();
+    }
+
     private void actualizarListaUsuarios(String nombre, String estado) {
         String textoMostrar = nombre + (estado.equals("ON") ? " (Online)" : " (Offline)");
-
-        // 1. Buscamos si ya existe en la lista (con cualquier estado)
         int indice = -1;
         for (int i = 0; i < listaUsuarios.getItems().size(); i++) {
-            String item = listaUsuarios.getItems().get(i);
-            if (item.startsWith(nombre + " ")) { // Buscamos por el nombre
+            if (listaUsuarios.getItems().get(i).startsWith(nombre + " ")) {
                 indice = i;
                 break;
             }
         }
+        if (indice != -1) listaUsuarios.getItems().set(indice, textoMostrar);
+        else listaUsuarios.getItems().add(textoMostrar);
+    }
 
-        // 2. Si existe, lo actualizamos. Si no, lo añadimos.
-        if (indice != -1) {
-            listaUsuarios.getItems().set(indice, textoMostrar);
-        } else {
-            listaUsuarios.getItems().add(textoMostrar);
-        }
+    // --- MÉTODO ESTRELLA: CREAR BURBUJAS ---
+    private void agregarMensaje(String mensaje) {
+        Platform.runLater(() -> {
+            Label lblTexto = new Label(mensaje);
+            lblTexto.setWrapText(true);
+            lblTexto.setMaxWidth(350);
+
+            // Detectar si soy yo (buscando "Yo:" o "MiNombre:")
+            boolean esMio = mensaje.contains(nombreUsuario + ":") || mensaje.startsWith("Yo:");
+
+            if (esMio) {
+                lblTexto.getStyleClass().add("burbuja-enviada");
+            } else {
+                lblTexto.getStyleClass().add("burbuja-recibida");
+            }
+
+            HBox caja = new HBox(lblTexto);
+            if (esMio) {
+                caja.setAlignment(Pos.CENTER_RIGHT);
+                HBox.setMargin(lblTexto, new Insets(0, 10, 0, 50));
+            } else {
+                caja.setAlignment(Pos.CENTER_LEFT);
+                HBox.setMargin(lblTexto, new Insets(0, 50, 0, 10));
+            }
+
+            contenedorMensajes.getChildren().add(caja);
+            scrollMensajes.layout();
+            scrollMensajes.setVvalue(1.0); // Bajar scroll al fondo
+        });
     }
 
     private void cerrarConexion() {
-        try {
-            if (socket != null) socket.close();
-        } catch (IOException e) { e.printStackTrace(); }
+        try { if (socket != null) socket.close(); } catch (IOException e) {}
     }
 
     @Override
     public void stop() throws Exception {
-        cerrarConexion(); // Cerrar socket al cerrar la ventana
+        cerrarConexion();
         super.stop();
     }
 
