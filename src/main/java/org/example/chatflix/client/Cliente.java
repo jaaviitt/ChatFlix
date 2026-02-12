@@ -10,11 +10,14 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import javafx.collections.ObservableList;
+import javafx.scene.control.SelectionMode;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
+import java.util.*;
 
 public class Cliente extends Application {
 
@@ -102,23 +105,92 @@ public class Cliente extends Application {
         listaUsuarios.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null) {
                 areaMensajes.clear();
-
-                // LIMPIEZA DE NOMBRE AQUÍ TAMBIÉN
-                String nombreLimpio = newVal.split(" \\(")[0];
-
                 try {
-                    salida.writeUTF("GET_HISTORIAL|" + nombreLimpio);
+                    if (newVal.startsWith("[Grupo] ")) {
+                        // Es un grupo: extraemos el nombre real
+                        String nombreGrupo = newVal.replace("[Grupo] ", "");
+                        salida.writeUTF("GET_HISTORIAL_GRUPO|" + nombreGrupo);
+                    } else {
+                        // Es un usuario: limpiamos el (Online/Offline) y pedimos historial PV
+                        String nombreUser = newVal.split(" \\(")[0];
+                        salida.writeUTF("GET_HISTORIAL|" + nombreUser);
+                    }
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
             }
         });
 
+        // 1. Creamos el botón
+        Button btnCrearGrupo = new Button("Crear Grupo");
+        btnCrearGrupo.setMaxWidth(Double.MAX_VALUE); // Para que ocupe todo el ancho
+
+        // 2. Le damos la funcionalidad (el diálogo que pide el nombre)
+        btnCrearGrupo.setOnAction(e -> {
+            TextInputDialog dialog = new TextInputDialog();
+            dialog.setTitle("Nuevo Grupo");
+            dialog.setHeaderText("Paso 1: Nombre del grupo");
+            dialog.setContentText("Nombre:");
+
+            dialog.showAndWait().ifPresent(nombreG -> {
+                if (!nombreG.trim().isEmpty()) {
+                    try {
+                        // 1. Creamos el grupo en el servidor
+                        salida.writeUTF("CREAR_GRUPO|" + nombreG.trim());
+
+                        // 2. Paso 2: Ventana para elegir miembros
+                        Stage stageInvite = new Stage();
+                        stageInvite.setTitle("Invitar a " + nombreG);
+
+                        // Creamos una lista con los usuarios actuales
+                        ListView<String> listaParaInvitar = new ListView<>();
+                        for(String s : listaUsuarios.getItems()) {
+                            if(!s.startsWith("[Grupo]")) {
+                                listaParaInvitar.getItems().add(s.split(" \\(")[0]);
+                            }
+                        }
+                        // Habilitamos selección múltiple
+                        listaParaInvitar.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+
+                        Button btnAceptar = new Button("Invitar Seleccionados");
+                        btnAceptar.setOnAction(ev -> {
+                            ObservableList<String> seleccionados = listaParaInvitar.getSelectionModel().getSelectedItems();
+                            for(String invitado : seleccionados) {
+                                try {
+                                    salida.writeUTF("INVITAR_GRUPO|" + nombreG + "|" + invitado);
+                                } catch (IOException ex) { ex.printStackTrace(); }
+                            }
+                            stageInvite.close();
+                        });
+
+                        VBox layout = new VBox(10, new Label("Mantén CTRL para elegir varios:"), listaParaInvitar, btnAceptar);
+                        layout.setPadding(new javafx.geometry.Insets(10));
+                        stageInvite.setScene(new Scene(layout, 250, 300));
+                        stageInvite.show();
+
+                    } catch (IOException ex) { ex.printStackTrace(); }
+                }
+            });
+        });
+
+        // 3. ¡ESTA ES LA PARTE CLAVE!
+        // Asegúrate de que añades el botón al VBox (panelIzquierdo)
+        VBox panelIzquierdo = new VBox(10); // El '10' es el espacio entre elementos
+        panelIzquierdo.setPadding(new javafx.geometry.Insets(10));
+        panelIzquierdo.getChildren().addAll(
+                new Label("Contactos y Grupos:"),
+                listaUsuarios,
+                btnCrearGrupo
+        );
+        // Esto obliga a la lista a expandirse y empujar al botón hacia abajo
+        VBox.setVgrow(listaUsuarios, javafx.scene.layout.Priority.ALWAYS);
+
         // 4. Montaje final (BorderPane es ideal para esto)
         BorderPane root = new BorderPane();
         root.setCenter(areaMensajes);
         root.setBottom(panelInferior);
-        root.setLeft(listaUsuarios);
+
+        root.setLeft(panelIzquierdo);
 
         Scene scene = new Scene(root, 600, 400);
         escenarioPrincipal.setTitle("ChatFlix - Usuario: " + nombreUsuario);
@@ -188,6 +260,23 @@ public class Cliente extends Application {
                                             }
                                         });
                                     }
+                                    // CASO 4: CREAR GRUPO
+                                    else if (mensajeServer.startsWith("GRUPO_CREADO|")) {
+                                        String nombreGrupo = mensajeServer.split("\\|")[1];
+                                        Platform.runLater(() -> {
+                                            // Lo añadimos con un prefijo para distinguirlo
+                                            listaUsuarios.getItems().add(0, "[Grupo] " + nombreGrupo);
+                                        });
+                                    }
+                                    // CASO 5: INVITAR AL GRUPO
+                                    else if (mensajeServer.startsWith("GRUPO_INVITACION|")) {
+                                        String nombreG = mensajeServer.split("\\|")[1];
+                                        Platform.runLater(() -> {
+                                            if (!listaUsuarios.getItems().contains("[Grupo] " + nombreG)) {
+                                                listaUsuarios.getItems().add(0, "[Grupo] " + nombreG);
+                                            }
+                                        });
+                                    }
                                 }
                             } catch (IOException e) {
                                 Platform.runLater(() -> areaMensajes.appendText("Desconectado del servidor.\n"));
@@ -212,25 +301,23 @@ public class Cliente extends Application {
 
     private void enviarMensaje() {
         String texto = campoMensaje.getText();
-        String seleccionado = listaUsuarios.getSelectionModel().getSelectedItem(); // Ej: "Pepe (Online)"
+        String seleccionado = listaUsuarios.getSelectionModel().getSelectedItem();
 
         if (!texto.isEmpty() && seleccionado != null) {
-            // TRUCO: Partimos el texto por el paréntesis " (" y nos quedamos con la primera parte
-            // "Pepe (Online)" -> se convierte en -> "Pepe"
-            String usuarioDestino = seleccionado.split(" \\(")[0];
-
             try {
-                // Ya no hace falta el if del Chat General porque lo quitamos de la lista visual
-                salida.writeUTF("PV|" + usuarioDestino + "|" + texto);
-
-                // Limpiamos el campo de texto
+                if (seleccionado.startsWith("[Grupo] ")) {
+                    // Si es un grupo, enviamos con el comando especial de grupo
+                    String nombreGrupo = seleccionado.replace("[Grupo] ", "");
+                    salida.writeUTF("PV_GRUPO|" + nombreGrupo + "|" + texto);
+                } else {
+                    // Si es un usuario, limpiamos el estado y enviamos PV normal
+                    String nombreUser = seleccionado.split(" \\(")[0];
+                    salida.writeUTF("PV|" + nombreUser + "|" + texto);
+                }
                 campoMensaje.clear();
-
             } catch (IOException e) {
-                areaMensajes.appendText("Error al enviar mensaje.\n");
+                e.printStackTrace();
             }
-        } else if (seleccionado == null) {
-            areaMensajes.appendText("Sistema: Selecciona a alguien de la lista para hablar.\n");
         }
     }
 
