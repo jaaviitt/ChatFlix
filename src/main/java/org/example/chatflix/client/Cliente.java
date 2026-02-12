@@ -8,17 +8,19 @@ import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.VBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import javafx.collections.ObservableList;
 import javafx.scene.control.SelectionMode;
+import javafx.scene.paint.Color;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.net.Socket;
-import java.util.*;
+import java.nio.file.Files;
 
 public class Cliente extends Application {
 
@@ -28,14 +30,17 @@ public class Cliente extends Application {
     private Socket socket;
     private DataOutputStream salida;
     private DataInputStream entrada;
-    private String nombreUsuario; // Aquí guardamos tu nombre
+    private String nombreUsuario;
 
-    // COMPONENTES DE LA NUEVA INTERFAZ (Burbujas)
-    private ScrollPane scrollMensajes;   // La ventana con scroll
-    private VBox contenedorMensajes;     // La caja donde se apilan los mensajes
-
+    // COMPONENTES DE LA INTERFAZ
+    private ScrollPane scrollMensajes;
+    private VBox contenedorMensajes;
     private TextField campoMensaje;
-    private ListView<String> listaUsuarios;
+
+    // NUEVAS LISTAS SEPARADAS
+    private ListView<String> listaGrupos;
+    private ListView<String> listaContactos;
+    private String destinatarioActual = null; // Guardamos a quién escribimos (Usuario o [Grupo] Nombre)
 
     @Override
     public void start(Stage stage) {
@@ -79,30 +84,99 @@ public class Cliente extends Application {
         escenarioPrincipal.show();
     }
 
-    // --- PANTALLA 2: CHAT PRINCIPAL (MODIFICADO PARA BURBUJAS) ---
+    // --- PANTALLA 2: CHAT PRINCIPAL (DISEÑO FINAL) ---
     private void mostrarVentanaChat() {
-        // 1. ZONA DE MENSAJES (NUEVA: ScrollPane + VBox)
-        contenedorMensajes = new VBox(10); // 10px de espacio entre burbujas
-        contenedorMensajes.setPadding(new Insets(15)); // Margen interno
-
+        // 1. ZONA DE MENSAJES
+        contenedorMensajes = new VBox(10);
+        contenedorMensajes.setPadding(new Insets(15));
         scrollMensajes = new ScrollPane(contenedorMensajes);
-        scrollMensajes.setFitToWidth(true); // Que las burbujas se adapten al ancho
-        scrollMensajes.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER); // Sin scroll horizontal
+        scrollMensajes.setFitToWidth(true);
+        scrollMensajes.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
 
-        // IMPORTANTE: Cargar el CSS
+        // Cargar CSS
         try {
             String css = this.getClass().getResource("/estilos.css").toExternalForm();
             scrollMensajes.getStylesheets().add(css);
-        } catch (Exception e) {
-            System.out.println("Error cargando CSS: " + e.getMessage());
-        }
+        } catch (Exception e) { System.out.println("Error CSS: " + e.getMessage()); }
 
-        // 2. Panel Inferior (Escribir mensaje)
+
+        // --- PANEL IZQUIERDO: GRUPOS Y USUARIOS ---
+
+        // A) Lista de Grupos (Arriba)
+        listaGrupos = new ListView<>();
+        listaGrupos.setPrefHeight(150);
+        listaGrupos.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null) {
+                listaContactos.getSelectionModel().clearSelection(); // Desmarcar usuarios
+                seleccionarDestinatario(newVal, true);
+            }
+        });
+
+        // B) Lista de Usuarios (Abajo - Con Puntos de Color CORREGIDOS)
+        listaContactos = new ListView<>();
+
+        listaContactos.setCellFactory(lv -> new ListCell<String>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+
+                // Importante: Limpiar estilo si está vacío
+                if (empty || item == null) {
+                    setGraphic(null);
+                    setText(null);
+                    setStyle("-fx-background-color: transparent;"); // Limpiar fondo
+                } else {
+                    // item viene como "Pepe (Online)"
+                    String nombre = item.split(" \\(")[0];
+                    boolean isOnline = item.contains("(Online)");
+
+                    // --- CORRECCIÓN DEL PUNTO ---
+                    // Usamos Color.WEB para un verde/rojo más bonito y directo
+                    javafx.scene.shape.Circle punto = new javafx.scene.shape.Circle(5);
+                    if (isOnline) {
+                        punto.setFill(Color.web("#4CAF50")); // Verde semáforo
+                    } else {
+                        punto.setFill(Color.web("#F44336")); // Rojo semáforo
+                    }
+                    // -----------------------------
+
+                    Label lblNombre = new Label(nombre);
+                    // Forzamos el color de letra negro aquí también por seguridad
+                    lblNombre.setStyle("-fx-font-weight: bold; -fx-text-fill: #000000;");
+
+                    HBox fila = new HBox(10, punto, lblNombre);
+                    fila.setAlignment(Pos.CENTER_LEFT);
+                    setGraphic(fila);
+                    setText(null);
+                }
+            }
+        });
+        listaContactos.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null) {
+                listaGrupos.getSelectionModel().clearSelection(); // Desmarcar grupos
+                seleccionarDestinatario(newVal, false);
+            }
+        });
+        VBox.setVgrow(listaContactos, Priority.ALWAYS); // Ocupar espacio sobrante
+
+        // Botón Crear Grupo
+        Button btnCrearGrupo = new Button("Nuevo Grupo +");
+        btnCrearGrupo.setMaxWidth(Double.MAX_VALUE);
+        btnCrearGrupo.setOnAction(e -> crearGrupoDialogo());
+
+        VBox panelIzquierdo = new VBox(10, new Label("GRUPOS"), listaGrupos, btnCrearGrupo, new Separator(), new Label("USUARIOS"), listaContactos);
+        panelIzquierdo.setPadding(new Insets(10));
+        panelIzquierdo.setPrefWidth(200);
+        panelIzquierdo.setStyle("-fx-background-color: rgba(255,255,255,0.5);");
+
+
+        // --- PANEL INFERIOR ---
         campoMensaje = new TextField();
         campoMensaje.setPromptText("Escribe un mensaje...");
-        campoMensaje.setPrefWidth(300);
+        HBox.setHgrow(campoMensaje, Priority.ALWAYS);
 
-        Button btnEnviar = new Button("Enviar");
+        Button btnEnviar = new Button("➤");
+        btnEnviar.getStyleClass().add("boton-enviar");
         btnEnviar.setOnAction(e -> enviarMensaje());
 
         Button btnAdjuntar = new Button("📎");
@@ -111,92 +185,18 @@ public class Cliente extends Application {
         Button btnEmoji = new Button("😀");
         btnEmoji.setOnAction(e -> mostrarSelectorEmojis());
 
-        HBox panelInferior = new HBox(5, btnAdjuntar, btnEmoji, campoMensaje, btnEnviar);        panelInferior.setPadding(new Insets(10));
+        HBox panelInferior = new HBox(10, btnAdjuntar, btnEmoji, campoMensaje, btnEnviar);
+        panelInferior.setPadding(new Insets(10));
         panelInferior.setAlignment(Pos.CENTER);
-
-        // 3. Panel Izquierdo (Lista de Contactos)
-        listaUsuarios = new ListView<>();
-        listaUsuarios.setPrefWidth(150);
-
-        // Listener para cargar historial al hacer clic
-        listaUsuarios.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
-            if (newVal != null) {
-                // LIMPIEZA DE PANTALLA (NUEVO MÉTODO)
-                contenedorMensajes.getChildren().clear();
-
-                try {
-                    String nombreLimpio;
-                    if (newVal.startsWith("[Grupo] ")) {
-                        String nombreGrupo = newVal.replace("[Grupo] ", "");
-                        salida.writeUTF("GET_HISTORIAL_GRUPO|" + nombreGrupo);
-                    } else {
-                        String nombreUser = newVal.split(" \\(")[0];
-                        salida.writeUTF("GET_HISTORIAL|" + nombreUser);
-                    }
-                } catch (IOException e) { e.printStackTrace(); }
-            }
-        });
-
-        // Botón Crear Grupo
-        Button btnCrearGrupo = new Button("Crear Grupo");
-        btnCrearGrupo.setMaxWidth(Double.MAX_VALUE);
-        btnCrearGrupo.setOnAction(e -> {
-            TextInputDialog dialog = new TextInputDialog();
-            dialog.setTitle("Nuevo Grupo");
-            dialog.setHeaderText("Paso 1: Nombre del grupo");
-            dialog.setContentText("Nombre:");
-
-            dialog.showAndWait().ifPresent(nombreG -> {
-                if (!nombreG.trim().isEmpty()) {
-                    try {
-                        salida.writeUTF("CREAR_GRUPO|" + nombreG.trim());
-
-                        // Selección múltiple para invitar
-                        Stage stageInvite = new Stage();
-                        stageInvite.setTitle("Invitar a " + nombreG);
-
-                        ListView<String> listaParaInvitar = new ListView<>();
-                        for(String s : listaUsuarios.getItems()) {
-                            if(!s.startsWith("[Grupo]")) {
-                                listaParaInvitar.getItems().add(s.split(" \\(")[0]);
-                            }
-                        }
-                        listaParaInvitar.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
-
-                        Button btnAceptar = new Button("Invitar Seleccionados");
-                        btnAceptar.setOnAction(ev -> {
-                            ObservableList<String> seleccionados = listaParaInvitar.getSelectionModel().getSelectedItems();
-                            for(String invitado : seleccionados) {
-                                try {
-                                    salida.writeUTF("INVITAR_GRUPO|" + nombreG + "|" + invitado);
-                                } catch (IOException ex) { ex.printStackTrace(); }
-                            }
-                            stageInvite.close();
-                        });
-
-                        VBox layout = new VBox(10, new Label("Elige usuarios (CTRL+Click):"), listaParaInvitar, btnAceptar);
-                        layout.setPadding(new Insets(10));
-                        stageInvite.setScene(new Scene(layout, 250, 300));
-                        stageInvite.show();
-
-                    } catch (IOException ex) { ex.printStackTrace(); }
-                }
-            });
-        });
-
-        VBox panelIzquierdo = new VBox(10);
-        panelIzquierdo.setPadding(new Insets(10));
-        panelIzquierdo.getChildren().addAll(new Label("Contactos:"), listaUsuarios, btnCrearGrupo);
-        VBox.setVgrow(listaUsuarios, Priority.ALWAYS);
 
         // Montaje final
         BorderPane root = new BorderPane();
-        root.setCenter(scrollMensajes); // AQUÍ VA EL NUEVO SCROLLPANE
-        root.setBottom(panelInferior);
+        root.setCenter(scrollMensajes);
         root.setLeft(panelIzquierdo);
+        root.setBottom(panelInferior);
 
-        Scene scene = new Scene(root, 700, 500); // Un poco más grande para que luzca
-        escenarioPrincipal.setTitle("ChatFlix - Usuario: " + nombreUsuario);
+        Scene scene = new Scene(root, 800, 600);
+        escenarioPrincipal.setTitle("ChatFlix - " + nombreUsuario);
         escenarioPrincipal.setScene(scene);
         escenarioPrincipal.centerOnScreen();
     }
@@ -204,8 +204,6 @@ public class Cliente extends Application {
     // --- LÓGICA DE CONEXIÓN ---
     private void conectarYEntrar(String user, String pass, Label lblEstado) {
         lblEstado.setText("Conectando...");
-        lblEstado.setStyle("-fx-text-fill: black;");
-
         new Thread(() -> {
             try {
                 socket = new Socket("localhost", 12345);
@@ -217,234 +215,240 @@ public class Cliente extends Application {
 
                 Platform.runLater(() -> {
                     if (respuesta.startsWith("LOGIN_OK")) {
-                        this.nombreUsuario = user; // Guardamos el nombre aquí
+                        this.nombreUsuario = user;
                         mostrarVentanaChat();
 
-                        // HILO DE ESCUCHA
-                        new Thread(() -> {
-                            try {
-                                while (true) {
-                                    String mensajeServer = entrada.readUTF();
-
-                                    // CASO 1: MENSAJE DE CHAT -> BURBUJA
-                                    if (mensajeServer.startsWith("MSG|")) {
-                                        String texto = mensajeServer.substring(4);
-                                        // Usamos el nuevo método de burbujas
-                                        agregarMensaje(texto);
-                                    }
-                                    else if (mensajeServer.startsWith("STATUS|")) {
-                                        String[] partes = mensajeServer.split("\\|");
-                                        Platform.runLater(() -> actualizarListaUsuarios(partes[1], partes[2]));
-                                    }
-                                    else if (mensajeServer.startsWith("LISTA_USUARIOS|")) {
-                                        String lista = mensajeServer.substring(15);
-                                        Platform.runLater(() -> {
-                                            listaUsuarios.getItems().clear();
-                                            for (String userStr : lista.split(",")) {
-                                                String[] data = userStr.split(":");
-                                                actualizarListaUsuarios(data[0], data[1]);
-                                            }
-                                        });
-                                    }
-                                    else if (mensajeServer.startsWith("GRUPO_CREADO|")) {
-                                        String nombreGrupo = mensajeServer.split("\\|")[1];
-                                        Platform.runLater(() -> listaUsuarios.getItems().add(0, "[Grupo] " + nombreGrupo));
-                                    }
-                                    else if (mensajeServer.startsWith("GRUPO_INVITACION|")) {
-                                        String nombreG = mensajeServer.split("\\|")[1];
-                                        Platform.runLater(() -> {
-                                            if (!listaUsuarios.getItems().contains("[Grupo] " + nombreG)) {
-                                                listaUsuarios.getItems().add(0, "[Grupo] " + nombreG);
-                                            }
-                                        });
-                                    }
-                                    else if (mensajeServer.startsWith("FILE_RECIBIDO|")) {
-                                        String[] p = mensajeServer.split("\\|");
-                                        String deQuien = p[1];
-                                        String nombreArchivo = p[2];
-                                        int size = Integer.parseInt(p[3]);
-                                        byte[] data = new byte[size];
-                                        entrada.readFully(data);
-
-                                        agregarImagen(data, deQuien);
-                                    }
-                                }
-                            } catch (IOException e) {
-                                Platform.runLater(() -> agregarMensaje("Sistema: Desconectado del servidor."));
-                            }
-                        }).start();
+                        // Hilo de Escucha
+                        new Thread(this::bucleLecturaServidor).start();
 
                     } else {
-                        lblEstado.setText("Credenciales incorrectas");
+                        lblEstado.setText("Error Login");
                         lblEstado.setStyle("-fx-text-fill: red;");
                         cerrarConexion();
                     }
                 });
-
             } catch (IOException ex) {
-                Platform.runLater(() -> {
-                    lblEstado.setText("Error: Servidor no responde");
-                    lblEstado.setStyle("-fx-text-fill: red;");
-                });
+                Platform.runLater(() -> lblEstado.setText("Error de Conexión"));
             }
         }).start();
     }
 
-    private void enviarMensaje() {
-        String texto = campoMensaje.getText();
-        String seleccionado = listaUsuarios.getSelectionModel().getSelectedItem();
+    private void bucleLecturaServidor() {
+        try {
+            while (true) {
+                String mensajeServer = entrada.readUTF();
 
-        if (!texto.isEmpty() && seleccionado != null) {
-            try {
-                if (seleccionado.startsWith("[Grupo] ")) {
-                    String nombreGrupo = seleccionado.replace("[Grupo] ", "");
-                    salida.writeUTF("PV_GRUPO|" + nombreGrupo + "|" + texto);
-                } else {
-                    String nombreUser = seleccionado.split(" \\(")[0];
-                    salida.writeUTF("PV|" + nombreUser + "|" + texto);
+                if (mensajeServer.startsWith("MSG|")) {
+                    String texto = mensajeServer.substring(4);
+                    agregarMensaje(texto);
                 }
-                campoMensaje.clear();
-                // Nota: No añadimos el mensaje aquí manualmente, esperamos al eco del servidor
-            } catch (IOException e) { e.printStackTrace(); }
+                else if (mensajeServer.startsWith("STATUS|")) {
+                    String[] partes = mensajeServer.split("\\|");
+                    Platform.runLater(() -> actualizarListaContactos(partes[1], partes[2]));
+                }
+                else if (mensajeServer.startsWith("LISTA_USUARIOS|")) {
+                    String lista = mensajeServer.substring(15);
+                    Platform.runLater(() -> {
+                        listaContactos.getItems().clear();
+                        for (String userStr : lista.split(",")) {
+                            String[] data = userStr.split(":");
+                            actualizarListaContactos(data[0], data[1]);
+                        }
+                    });
+                }
+                else if (mensajeServer.startsWith("GRUPO_CREADO|") || mensajeServer.startsWith("GRUPO_INVITACION|")) {
+                    String nombreG = mensajeServer.split("\\|")[1];
+                    Platform.runLater(() -> {
+                        if (!listaGrupos.getItems().contains(nombreG)) listaGrupos.getItems().add(nombreG);
+                    });
+                }
+                else if (mensajeServer.startsWith("FILE_RECIBIDO|")) {
+                    String[] p = mensajeServer.split("\\|");
+                    String deQuien = p[1];
+                    int size = Integer.parseInt(p[3]);
+                    byte[] data = new byte[size];
+                    entrada.readFully(data);
+                    agregarImagen(data, deQuien);
+                }
+            }
+        } catch (IOException e) {
+            Platform.runLater(() -> agregarMensaje("Sistema: Desconectado."));
         }
     }
 
+    // --- MÉTODOS AUXILIARES ---
+
+    private void seleccionarDestinatario(String seleccion, boolean esGrupo) {
+        contenedorMensajes.getChildren().clear();
+        try {
+            if (esGrupo) {
+                // seleccion es solo el nombre, ej: "IQSA"
+                this.destinatarioActual = "[Grupo] " + seleccion;
+                salida.writeUTF("GET_HISTORIAL_GRUPO|" + seleccion);
+            } else {
+                // seleccion es "Pepe (Online)", extraemos nombre
+                String nombreUser = seleccion.split(" \\(")[0];
+                this.destinatarioActual = nombreUser;
+                salida.writeUTF("GET_HISTORIAL|" + nombreUser);
+            }
+        } catch (IOException e) { e.printStackTrace(); }
+    }
+
+    private void actualizarListaContactos(String nombre, String estado) {
+        String item = nombre + (estado.equals("ON") ? " (Online)" : " (Offline)");
+        // Buscar si existe para reemplazar o añadir
+        int idx = -1;
+        for(int i=0; i<listaContactos.getItems().size(); i++) {
+            if(listaContactos.getItems().get(i).startsWith(nombre + " ")) {
+                idx = i; break;
+            }
+        }
+        if(idx != -1) listaContactos.getItems().set(idx, item);
+        else listaContactos.getItems().add(item);
+    }
+
+    private void enviarMensaje() {
+        String texto = campoMensaje.getText();
+        if (texto.isEmpty() || destinatarioActual == null) return;
+        try {
+            if (destinatarioActual.startsWith("[Grupo] ")) {
+                String grupo = destinatarioActual.replace("[Grupo] ", "");
+                salida.writeUTF("PV_GRUPO|" + grupo + "|" + texto);
+            } else {
+                salida.writeUTF("PV|" + destinatarioActual + "|" + texto);
+            }
+            campoMensaje.clear();
+        } catch (IOException e) { e.printStackTrace(); }
+    }
+
     private void enviarArchivo() {
-        String seleccionado = listaUsuarios.getSelectionModel().getSelectedItem();
-        if (seleccionado == null) {
-            agregarMensaje("Sistema: Selecciona a alguien antes de enviar un archivo.");
+        if (destinatarioActual == null) {
+            Alert a = new Alert(Alert.AlertType.WARNING, "Selecciona un chat primero.");
+            a.show();
             return;
         }
+        javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
+        fc.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("Imágenes", "*.png", "*.jpg", "*.jpeg"));
+        File f = fc.showOpenDialog(escenarioPrincipal);
 
-        javafx.stage.FileChooser fileChooser = new javafx.stage.FileChooser();
-        fileChooser.setTitle("Seleccionar Imagen");
-        fileChooser.getExtensionFilters().add(
-                new javafx.stage.FileChooser.ExtensionFilter("Imágenes", "*.png", "*.jpg", "*.jpeg")
-        );
-
-        java.io.File archivo = fileChooser.showOpenDialog(escenarioPrincipal);
-
-        if (archivo != null) {
-            // Ejecutamos en un hilo aparte para no congelar la pantalla mientras se lee el archivo
+        if (f != null) {
             new Thread(() -> {
                 try {
-                    byte[] bytesArchivo = java.nio.file.Files.readAllBytes(archivo.toPath());
-                    String destino = seleccionado.split(" \\(")[0];
-                    if (seleccionado.startsWith("[Grupo] ")) {
-                        destino = seleccionado.replace("[Grupo] ", "");
-                    }
+                    byte[] bytes = Files.readAllBytes(f.toPath());
+                    String destino = destinatarioActual.replace("[Grupo] ", ""); // Limpiamos si es grupo
 
-                    // Enviamos el comando y luego los bytes
-                    salida.writeUTF("FILE|" + destino + "|" + archivo.getName() + "|" + bytesArchivo.length);
-                    salida.write(bytesArchivo);
+                    // IMPORTANTE: El servidor necesita saber si es grupo o no para reenviarlo bien.
+                    // Con tu protocolo actual "FILE|Destino|...", el servidor busca por nombre.
+                    // Si tienes un grupo y un usuario con mismo nombre podría haber conflicto,
+                    // pero asumimos nombres únicos por ahora.
+
+                    salida.writeUTF("FILE|" + destino + "|" + f.getName() + "|" + bytes.length);
+                    salida.write(bytes);
                     salida.flush();
 
-                    // Pintamos la imagen en nuestro chat
-                    Platform.runLater(() -> agregarImagen(bytesArchivo, "Yo"));
-
-                } catch (IOException ex) {
-                    ex.printStackTrace();
-                }
+                    Platform.runLater(() -> agregarImagen(bytes, "Yo"));
+                } catch (IOException e) { e.printStackTrace(); }
             }).start();
         }
+    }
+
+    private void crearGrupoDialogo() {
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.setTitle("Nuevo Grupo");
+        dialog.setHeaderText("Crear grupo");
+        dialog.setContentText("Nombre:");
+        dialog.showAndWait().ifPresent(nombreG -> {
+            if(!nombreG.trim().isEmpty()) {
+                try {
+                    salida.writeUTF("CREAR_GRUPO|" + nombreG.trim());
+                    // Invitar gente (simplificado)
+                    mostrarDialogoInvitacion(nombreG.trim());
+                } catch (IOException e) { e.printStackTrace(); }
+            }
+        });
+    }
+
+    private void mostrarDialogoInvitacion(String nombreGrupo) {
+        Stage stage = new Stage();
+        ListView<String> listaInv = new ListView<>();
+        // Llenamos con los contactos actuales (limpiando el estado)
+        for(String s : listaContactos.getItems()) {
+            listaInv.getItems().add(s.split(" \\(")[0]);
+        }
+        listaInv.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+
+        Button btnInv = new Button("Invitar");
+        btnInv.setOnAction(e -> {
+            for(String user : listaInv.getSelectionModel().getSelectedItems()) {
+                try { salida.writeUTF("INVITAR_GRUPO|" + nombreGrupo + "|" + user); }
+                catch (IOException ex) {}
+            }
+            stage.close();
+        });
+        stage.setScene(new Scene(new VBox(10, new Label("Elige miembros:"), listaInv, btnInv), 200, 300));
+        stage.show();
+    }
+
+    private void mostrarSelectorEmojis() {
+        Stage stage = new Stage();
+        javafx.scene.layout.FlowPane pane = new javafx.scene.layout.FlowPane(5,5);
+        pane.setPadding(new Insets(10));
+        String[] emojis = {"😀","😂","😍","😎","😭","😡","👍","👎","🔥","🎉"};
+        for(String em : emojis) {
+            Button b = new Button(em);
+            b.setOnAction(e -> { campoMensaje.appendText(em); stage.close(); });
+            pane.getChildren().add(b);
+        }
+        stage.setScene(new Scene(pane, 200, 150));
+        stage.setTitle("Emojis");
+        stage.show();
+    }
+
+    private void agregarMensaje(String mensaje) {
+        Platform.runLater(() -> {
+            Label lbl = new Label(mensaje);
+            lbl.setWrapText(true);
+            lbl.setMaxWidth(350);
+
+            lbl.setStyle("-fx-text-fill: black; -fx-font-size: 14px;");
+
+            boolean esMio = mensaje.contains(nombreUsuario + ":") || mensaje.startsWith("Yo:");
+            lbl.getStyleClass().add(esMio ? "burbuja-enviada" : "burbuja-recibida");
+
+            HBox caja = new HBox(lbl);
+            caja.setAlignment(esMio ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
+            if(esMio) HBox.setMargin(lbl, new Insets(0,10,0,50));
+            else HBox.setMargin(lbl, new Insets(0,50,0,10));
+
+            contenedorMensajes.getChildren().add(caja);
+            scrollMensajes.layout();
+            scrollMensajes.setVvalue(1.0);
+        });
     }
 
     private void agregarImagen(byte[] data, String remitente) {
         Platform.runLater(() -> {
             try {
                 javafx.scene.image.Image img = new javafx.scene.image.Image(new java.io.ByteArrayInputStream(data));
-                javafx.scene.image.ImageView vistaImagen = new javafx.scene.image.ImageView(img);
-                vistaImagen.setFitWidth(250);
-                vistaImagen.setPreserveRatio(true);
+                javafx.scene.image.ImageView view = new javafx.scene.image.ImageView(img);
+                view.setFitWidth(200);
+                view.setPreserveRatio(true);
 
-                // CORRECCIÓN AQUÍ: Detectar si soy yo
                 boolean esMio = remitente.equals("Yo") || remitente.equals(nombreUsuario);
+                VBox box = new VBox(5, new Label(esMio ? "Yo" : remitente), view);
+                box.getStyleClass().add(esMio ? "burbuja-enviada" : "burbuja-recibida");
 
-                VBox contenedorBurbuja = new VBox(5, new Label(esMio ? "Yo" : remitente), vistaImagen);
-                contenedorBurbuja.getStyleClass().add(esMio ? "burbuja-enviada" : "burbuja-recibida");
-
-                HBox fila = new HBox(contenedorBurbuja);
-                fila.setAlignment(esMio ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
-
-                // Márgenes para separar de los bordes
-                if (esMio) HBox.setMargin(contenedorBurbuja, new Insets(5, 10, 5, 50));
-                else HBox.setMargin(contenedorBurbuja, new Insets(5, 50, 5, 10));
-
-                contenedorMensajes.getChildren().add(fila);
+                HBox caja = new HBox(box);
+                caja.setAlignment(esMio ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
+                contenedorMensajes.getChildren().add(caja);
                 scrollMensajes.layout();
                 scrollMensajes.setVvalue(1.0);
-
-            } catch (Exception e) { e.printStackTrace(); }
-        });
-    }
-
-    private void mostrarSelectorEmojis() {
-        Stage emojiStage = new Stage();
-        String[] emojis = {"😀", "😂", "😍", "😎", "🤔", "👍", "🔥", "🚀", "🎉", "❤️"};
-
-        javafx.scene.layout.FlowPane pane = new javafx.scene.layout.FlowPane(5, 5);
-        pane.setPadding(new Insets(10));
-
-        for (String s : emojis) {
-            Button b = new Button(s);
-            b.setOnAction(e -> {
-                campoMensaje.appendText(s); // Lo añade al mensaje actual
-                emojiStage.close();
-            });
-            pane.getChildren().add(b);
-        }
-
-        emojiStage.setScene(new Scene(pane, 200, 100));
-        emojiStage.setTitle("Emojis");
-        emojiStage.show();
-    }
-
-    private void actualizarListaUsuarios(String nombre, String estado) {
-        String textoMostrar = nombre + (estado.equals("ON") ? " (Online)" : " (Offline)");
-        int indice = -1;
-        for (int i = 0; i < listaUsuarios.getItems().size(); i++) {
-            if (listaUsuarios.getItems().get(i).startsWith(nombre + " ")) {
-                indice = i;
-                break;
-            }
-        }
-        if (indice != -1) listaUsuarios.getItems().set(indice, textoMostrar);
-        else listaUsuarios.getItems().add(textoMostrar);
-    }
-
-    // --- MÉTODO ESTRELLA: CREAR BURBUJAS ---
-    private void agregarMensaje(String mensaje) {
-        Platform.runLater(() -> {
-            Label lblTexto = new Label(mensaje);
-            lblTexto.setWrapText(true);
-            lblTexto.setMaxWidth(350);
-
-            // Detectar si soy yo (buscando "Yo:" o "MiNombre:")
-            boolean esMio = mensaje.contains(nombreUsuario + ":") || mensaje.startsWith("Yo:");
-
-            if (esMio) {
-                lblTexto.getStyleClass().add("burbuja-enviada");
-            } else {
-                lblTexto.getStyleClass().add("burbuja-recibida");
-            }
-
-            HBox caja = new HBox(lblTexto);
-            if (esMio) {
-                caja.setAlignment(Pos.CENTER_RIGHT);
-                HBox.setMargin(lblTexto, new Insets(0, 10, 0, 50));
-            } else {
-                caja.setAlignment(Pos.CENTER_LEFT);
-                HBox.setMargin(lblTexto, new Insets(0, 50, 0, 10));
-            }
-
-            contenedorMensajes.getChildren().add(caja);
-            scrollMensajes.layout();
-            scrollMensajes.setVvalue(1.0); // Bajar scroll al fondo
+            } catch (Exception e) {}
         });
     }
 
     private void cerrarConexion() {
-        try { if (socket != null) socket.close(); } catch (IOException e) {}
+        try { if(socket!=null) socket.close(); } catch(IOException e){}
     }
 
     @Override

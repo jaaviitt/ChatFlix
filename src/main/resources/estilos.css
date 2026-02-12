@@ -1,31 +1,89 @@
-/* Fondo de la ventana de chat */
+/* --- FONDO GENERAL (Azul Claro) --- */
 .root {
     -fx-font-family: "Segoe UI", sans-serif;
     -fx-font-size: 14px;
+    -fx-background-color: #e3f2fd; /* Azul muy suave */
 }
 
-/* Burbuja para MIS mensajes (Verde, a la derecha) */
+/* Etiqueta de texto genérica por si acaso */
+.label {
+    -fx-text-fill: #000000;
+}
+
+/* --- LISTAS DE CONTACTOS (Transparente para que se vea el azul) --- */
+.list-view {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+.list-cell {
+    -fx-text-fill: #000000; /* Texto NEGRO obligatorio */
+    -fx-font-size: 14px;
+    -fx-padding: 5px;
+    -fx-background-color: transparent;
+}
+/* Cuando pasas el ratón o seleccionas */
+.list-cell:filled:selected, .list-cell:filled:hover {
+    -fx-background-color: #bbdefb;
+    -fx-text-fill: #000000; /* Aseguramos que siga negro al seleccionar */
+}
+
+/* --- BOTÓN ENVIAR (Azul y Redondo) --- */
+.boton-enviar {
+    -fx-background-color: #1976d2; /* Azul fuerte */
+    -fx-text-fill: white;
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-background-radius: 50%; /* Totalmente redondo */
+    -fx-min-width: 40px;
+    -fx-min-height: 40px;
+    -fx-max-width: 40px;
+    -fx-max-height: 40px;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.3), 3, 0, 1, 1);
+}
+.boton-enviar:hover {
+    -fx-background-color: #1565c0;
+}
+.boton-enviar:pressed {
+    -fx-background-color: #0d47a1;
+}
+
+/* --- PUNTOS DE ESTADO --- */
+.punto-online {
+    -fx-background-color: #4caf50; /* Verde */
+    -fx-min-width: 10px;
+    -fx-min-height: 10px;
+    -fx-background-radius: 50%;
+}
+.punto-offline {
+    -fx-background-color: #f44336; /* Rojo */
+    -fx-min-width: 10px;
+    -fx-min-height: 10px;
+    -fx-background-radius: 50%;
+}
+
+/* --- BURBUJAS DE CHAT --- */
+/* Burbuja MÍA (Verde) */
 .burbuja-enviada {
-    -fx-background-color: #dcf8c6; /* Verde WhatsApp */
+    -fx-background-color: #dcf8c6;
     -fx-background-radius: 15;
     -fx-padding: 10px;
+    -fx-text-fill: #000000; /* Texto negro */
     -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.2), 3, 0, 1, 1);
-    -fx-font-weight: bold;
 }
 
-/* Burbuja para LOS OTROS mensajes (Blanco, a la izquierda) */
+/* Burbuja DE OTRO (Blanca) */
 .burbuja-recibida {
     -fx-background-color: #ffffff;
     -fx-background-radius: 15;
     -fx-padding: 10px;
+    -fx-text-fill: #000000; /* Texto negro */
     -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.2), 3, 0, 1, 1);
 }
-
-/* El fondo del área de chat */
 .scroll-pane {
-    -fx-background: #ece5dd; /* Color beige típico de chats */
-    -fx-border-color: transparent;
+    -fx-background: transparent;
+    -fx-background-color: transparent;
 }
 .scroll-pane > .viewport {
-    -fx-background-color: #ece5dd;
+    -fx-background-color: transparent;
 }
