@@ -6,6 +6,7 @@ import org.example.chatflix.server.GestorBaseDatos;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.*;
+import java.util.*;
 
 public class UsuarioDAO {
 
@@ -85,5 +86,24 @@ public class UsuarioDAO {
             e.printStackTrace();
         }
         return -1; // No encontrado
+    }
+
+    // Obtener todos los nombres de usuario registrados en el sistema
+    public List<String> obtenerTodosLosNombres() {
+        List<String> nombres = new ArrayList<>();
+        String sql = "SELECT nombre_usuario FROM usuarios";
+
+        try (Connection conn = GestorBaseDatos.conectar();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+
+            while (rs.next()) {
+                nombres.add(rs.getString("nombre_usuario"));
+            }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return nombres;
     }
 }

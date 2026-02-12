@@ -38,16 +38,32 @@ public class HiloCliente implements Runnable {
                     this.usuario = u;
                     salida.writeUTF("LOGIN_OK|" + u.getId());
 
-                    // AVISAR A TODOS (Broadcast de estado)
+                    // ... después de enviar LOGIN_OK ...
+
+                    // 1. AVISAR A TODOS (Broadcast)
                     Servidor.broadcast("STATUS|" + usuario.getNombre() + "|ON", this);
 
-                    // ENVIARME LA LISTA DE CONECTADOS (Sin Chat General)
+                    // 2. ENVIARME LA LISTA COMPLETA DE USUARIOS (Con estado)
+                    List<String> todosLosUsuarios = uDao.obtenerTodosLosNombres();
                     StringBuilder sb = new StringBuilder();
-                    for (HiloCliente cliente : Servidor.clientesConectados) {
-                        if (cliente != this && cliente.usuario != null) {
-                            sb.append(cliente.usuario.getNombre()).append(",");
+
+                    for (String nombreUser : todosLosUsuarios) {
+                        // No nos añadimos a nosotros mismos a la lista
+                        if (nombreUser.equals(this.usuario.getNombre())) continue;
+
+                        // Comprobamos si está online buscando en la lista del servidor
+                        boolean isOnline = false;
+                        for (HiloCliente conectado : Servidor.clientesConectados) {
+                            if (conectado.getNombreUsuario() != null && conectado.getNombreUsuario().equals(nombreUser)) {
+                                isOnline = true;
+                                break;
+                            }
                         }
+
+                        // Formato: Nombre:ON o Nombre:OFF
+                        sb.append(nombreUser).append(":").append(isOnline ? "ON" : "OFF").append(",");
                     }
+
                     if (sb.length() > 0) {
                         salida.writeUTF("LISTA_USUARIOS|" + sb.toString());
                     }

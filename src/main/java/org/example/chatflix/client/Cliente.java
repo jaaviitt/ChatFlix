@@ -98,12 +98,19 @@ public class Cliente extends Application {
         listaUsuarios = new ListView<>();
         listaUsuarios.setPrefWidth(120);
 
+        // Listener para cargar historial al hacer clic
         listaUsuarios.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null) {
-                areaMensajes.clear(); // Limpiamos la pantalla para el nuevo chat
+                areaMensajes.clear();
+
+                // LIMPIEZA DE NOMBRE AQUÍ TAMBIÉN
+                String nombreLimpio = newVal.split(" \\(")[0];
+
                 try {
-                    salida.writeUTF("GET_HISTORIAL|" + newVal);
-                } catch (IOException e) { e.printStackTrace(); }
+                    salida.writeUTF("GET_HISTORIAL|" + nombreLimpio);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             }
         });
 
@@ -156,35 +163,28 @@ public class Cliente extends Application {
                                         Platform.runLater(() -> areaMensajes.appendText(texto + "\n"));
                                     }
 
-                                    // CASO 2: ALGUIEN CAMBIA DE ESTADO (ENTRA/SALE)
+                                    // CASO 2: ALGUIEN CAMBIA DE ESTADO
                                     else if (mensajeServer.startsWith("STATUS|")) {
                                         String[] partes = mensajeServer.split("\\|");
                                         String nombre = partes[1];
-                                        String estado = partes[2]; // ON o OFF
+                                        String estado = partes[2]; // ON u OFF
 
-                                        Platform.runLater(() -> {
-                                            if (estado.equals("ON")) {
-                                                if (!listaUsuarios.getItems().contains(nombre)) {
-                                                    listaUsuarios.getItems().add(nombre);
-                                                    areaMensajes.appendText(">>> " + nombre + " se ha conectado.\n");
-                                                }
-                                            } else {
-                                                listaUsuarios.getItems().remove(nombre);
-                                                areaMensajes.appendText("<<< " + nombre + " se ha desconectado.\n");
-                                            }
-                                        });
+                                        Platform.runLater(() -> actualizarListaUsuarios(nombre, estado));
                                     }
 
-                                    // CASO 3: RECIBIR LISTA INICIAL
+                                    // CASO 3: RECIBIR LISTA INICIAL COMPLETA
                                     else if (mensajeServer.startsWith("LISTA_USUARIOS|")) {
-                                        String lista = mensajeServer.substring(15); // Quitamos la cabecera
-                                        String[] nombres = lista.split(",");
+                                        String lista = mensajeServer.substring(15);
+                                        String[] usuariosConEstado = lista.split(",");
 
                                         Platform.runLater(() -> {
-                                            for (String nombre : nombres) {
-                                                if (!listaUsuarios.getItems().contains(nombre)) {
-                                                    listaUsuarios.getItems().add(nombre);
-                                                }
+                                            listaUsuarios.getItems().clear(); // Limpiamos para evitar duplicados
+                                            for (String userStr : usuariosConEstado) {
+                                                // userStr viene como "Pepe:ON"
+                                                String[] data = userStr.split(":");
+                                                String nombre = data[0];
+                                                String estado = data[1];
+                                                actualizarListaUsuarios(nombre, estado);
                                             }
                                         });
                                     }
@@ -212,21 +212,47 @@ public class Cliente extends Application {
 
     private void enviarMensaje() {
         String texto = campoMensaje.getText();
-        String seleccionado = listaUsuarios.getSelectionModel().getSelectedItem(); // Quién está marcado en azul
+        String seleccionado = listaUsuarios.getSelectionModel().getSelectedItem(); // Ej: "Pepe (Online)"
 
         if (!texto.isEmpty() && seleccionado != null) {
+            // TRUCO: Partimos el texto por el paréntesis " (" y nos quedamos con la primera parte
+            // "Pepe (Online)" -> se convierte en -> "Pepe"
+            String usuarioDestino = seleccionado.split(" \\(")[0];
+
             try {
-                if (seleccionado.equals("Chat General")) {
-                    salida.writeUTF("MSG|" + texto); // Mensaje para todos
-                } else {
-                    salida.writeUTF("PV|" + seleccionado + "|" + texto); // Mensaje privado
-                }
+                // Ya no hace falta el if del Chat General porque lo quitamos de la lista visual
+                salida.writeUTF("PV|" + usuarioDestino + "|" + texto);
+
+                // Limpiamos el campo de texto
                 campoMensaje.clear();
+
             } catch (IOException e) {
-                areaMensajes.appendText("Error al enviar.\n");
+                areaMensajes.appendText("Error al enviar mensaje.\n");
             }
         } else if (seleccionado == null) {
             areaMensajes.appendText("Sistema: Selecciona a alguien de la lista para hablar.\n");
+        }
+    }
+
+    // Método auxiliar para gestionar la lista visualmente
+    private void actualizarListaUsuarios(String nombre, String estado) {
+        String textoMostrar = nombre + (estado.equals("ON") ? " (Online)" : " (Offline)");
+
+        // 1. Buscamos si ya existe en la lista (con cualquier estado)
+        int indice = -1;
+        for (int i = 0; i < listaUsuarios.getItems().size(); i++) {
+            String item = listaUsuarios.getItems().get(i);
+            if (item.startsWith(nombre + " ")) { // Buscamos por el nombre
+                indice = i;
+                break;
+            }
+        }
+
+        // 2. Si existe, lo actualizamos. Si no, lo añadimos.
+        if (indice != -1) {
+            listaUsuarios.getItems().set(indice, textoMostrar);
+        } else {
+            listaUsuarios.getItems().add(textoMostrar);
         }
     }
 
