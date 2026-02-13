@@ -9,7 +9,7 @@ import java.util.List;
 public class Servidor {
     private static final int PUERTO = 12345;
 
-    // LISTA DE CLIENTES CONECTADOS (Para poder enviar mensajes a todos)
+    // LISTA DE CLIENTES CONECTADOS
     public static List<HiloCliente> clientesConectados = new ArrayList<>();
 
     public static void main(String[] args) {
@@ -38,7 +38,6 @@ public class Servidor {
     // Método para enviar un mensaje a TODOS (Broadcast)
     public static void broadcast(String mensaje, HiloCliente remitente) {
         for (HiloCliente cliente : clientesConectados) {
-            // Opcional: Si no quieres que te llegue tu propio mensaje, pon un if aquí
             cliente.enviarMensaje(mensaje);
         }
     }

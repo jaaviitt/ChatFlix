@@ -10,4 +10,5 @@ module org.example.chatflix {
     exports org.example.chatflix.server;
     // exports org.example.chatflix.model;
     opens org.example.chatflix.server to javafx.fxml;
+    opens org.example.chatflix.client to javafx.fxml;
 }

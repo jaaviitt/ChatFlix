@@ -1,109 +1,105 @@
 package org.example.chatflix.server.dao;
 
-import org.example.chatflix.model.Usuario;
-import org.example.chatflix.server.GestorBaseDatos;
-
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.sql.*;
-import java.util.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 
 public class UsuarioDAO {
 
-    /**
-     * Intenta loguear al usuario.
-     * Si el usuario NO existe, lo crea automáticamente (Registro).
-     * Si SÍ existe, comprueba la contraseña.
-     */
-    public Usuario loginOregistrar(String nombre, String password) {
-        String passCifrada = hashPassword(password); // Requisito de seguridad
+    private Connection conexion;
 
-        try (Connection conn = GestorBaseDatos.conectar()) {
+    public UsuarioDAO(Connection conexion) {
+        this.conexion = conexion;
+    }
+    // --- REGISTRO Y LOGIN ---
 
-            // 1. Buscamos si el usuario ya existe
-            String sqlCheck = "SELECT id_usuario, password_hash FROM usuarios WHERE nombre_usuario = ?";
-            try (PreparedStatement pstmt = conn.prepareStatement(sqlCheck)) {
-                pstmt.setString(1, nombre);
-                ResultSet rs = pstmt.executeQuery();
-
-                if (rs.next()) {
-                    // --- EL USUARIO EXISTE: Verificamos contraseña ---
-                    String passGuardada = rs.getString("password_hash");
-                    if (passGuardada.equals(passCifrada)) {
-                        return new Usuario(rs.getInt("id_usuario"), nombre);
-                    } else {
-                        System.out.println("Login fallido: Password incorrecta para " + nombre);
-                        return null; // Contraseña mal
-                    }
-                }
-            }
-
-            // 2. Si no existe, lo --- REGISTRAMOS ---
-            String sqlInsert = "INSERT INTO usuarios (nombre_usuario, password_hash) VALUES (?, ?)";
-            try (PreparedStatement pstmt = conn.prepareStatement(sqlInsert, Statement.RETURN_GENERATED_KEYS)) {
-                pstmt.setString(1, nombre);
-                pstmt.setString(2, passCifrada);
-                pstmt.executeUpdate();
-
-                ResultSet rsKeys = pstmt.getGeneratedKeys();
-                if (rsKeys.next()) {
-                    System.out.println("Nuevo usuario registrado: " + nombre);
-                    return new Usuario(rsKeys.getInt(1), nombre);
-                }
-            }
-
-        } catch (SQLException e) {
-            System.err.println("Error SQL: " + e.getMessage());
-        }
-        return null;
+    public boolean registrarUsuario(String nombre, String password) {
+        String sql = "INSERT INTO usuarios (nombre_usuario, password_hash) VALUES (?, ?)";
+        try (PreparedStatement ps = conexion.prepareStatement(sql)) {
+            ps.setString(1, nombre);
+            ps.setString(2, password);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) { return false; }
     }
 
-    // --- Métodos Privados de Ayuda ---
-
-    private String hashPassword(String password) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(password.getBytes());
-            StringBuilder hexString = new StringBuilder();
-            for (byte b : hash) {
-                String hex = Integer.toHexString(0xff & b);
-                if (hex.length() == 1) hexString.append('0');
-                hexString.append(hex);
-            }
-            return hexString.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("Error al cifrar", e);
-        }
+    public boolean validarLogin(String nombre, String password) {
+        String sql = "SELECT * FROM usuarios WHERE nombre_usuario = ? AND password_hash = ?";
+        try (PreparedStatement ps = conexion.prepareStatement(sql)) {
+            ps.setString(1, nombre);
+            ps.setString(2, password);
+            ResultSet rs = ps.executeQuery();
+            return rs.next();
+        } catch (SQLException e) { return false; }
     }
+
+    // --- MÉTODOS DE UTILIDAD ---
+
     public int obtenerIdPorNombre(String nombre) {
+        // CORREGIDO: id_usuario y nombre_usuario
         String sql = "SELECT id_usuario FROM usuarios WHERE nombre_usuario = ?";
-        try (Connection conn = GestorBaseDatos.conectar();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, nombre);
-            ResultSet rs = pstmt.executeQuery();
+        try (PreparedStatement ps = conexion.prepareStatement(sql)) {
+            ps.setString(1, nombre);
+            ResultSet rs = ps.executeQuery();
             if (rs.next()) return rs.getInt("id_usuario");
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return -1; // No encontrado
+        } catch (SQLException e) { e.printStackTrace(); }
+        return -1;
     }
 
-    // Obtener todos los nombres de usuario registrados en el sistema
-    public List<String> obtenerTodosLosNombres() {
-        List<String> nombres = new ArrayList<>();
-        String sql = "SELECT nombre_usuario FROM usuarios";
+    // --- GESTIÓN DE FAVORITOS (Aquí estaba el error principal) ---
 
-        try (Connection conn = GestorBaseDatos.conectar();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-
-            while (rs.next()) {
-                nombres.add(rs.getString("nombre_usuario"));
-            }
-
+    public boolean agregarFavorito(int idUsuario, int idFavorito) {
+        String sql = "INSERT OR IGNORE INTO favoritos (id_usuario, id_favorito) VALUES (?, ?)";
+        try (PreparedStatement ps = conexion.prepareStatement(sql)) {
+            ps.setInt(1, idUsuario);
+            ps.setInt(2, idFavorito);
+            int filas = ps.executeUpdate();
+            if(filas > 0) System.out.println("✅ DAO: Favorito agregado correctamente.");
+            return filas > 0;
         } catch (SQLException e) {
             e.printStackTrace();
+            return false;
         }
-        return nombres;
+    }
+
+    public boolean eliminarFavorito(int idUsuario, int idFavorito) {
+        String sql = "DELETE FROM favoritos WHERE id_usuario = ? AND id_favorito = ?";
+        try (PreparedStatement ps = conexion.prepareStatement(sql)) {
+            ps.setInt(1, idUsuario);
+            ps.setInt(2, idFavorito);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) { return false; }
+    }
+
+    public List<String> obtenerFavoritos(int idUsuario) {
+        List<String> lista = new ArrayList<>();
+        String sql = "SELECT u.nombre_usuario FROM usuarios u " +
+                "JOIN favoritos f ON u.id_usuario = f.id_favorito " +
+                "WHERE f.id_usuario = ?";
+        try (PreparedStatement ps = conexion.prepareStatement(sql)) {
+            ps.setInt(1, idUsuario);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                lista.add(rs.getString("nombre_usuario"));
+            }
+            System.out.println("📥 DAO: Recuperados " + lista.size() + " favoritos.");
+        } catch (SQLException e) {
+            System.err.println("❌ DAO ERROR GET FAVS: " + e.getMessage());
+        }
+        return lista;
+    }
+
+    public List<String> obtenerTodosLosNombres() {
+        List<String> usuarios = new ArrayList<>();
+        String sql = "SELECT nombre_usuario FROM usuarios";
+        try (PreparedStatement ps = conexion.prepareStatement(sql)) {
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                usuarios.add(rs.getString("nombre_usuario"));
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return usuarios;
     }
 }

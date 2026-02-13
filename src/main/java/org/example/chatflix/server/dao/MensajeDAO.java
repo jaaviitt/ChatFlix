@@ -8,7 +8,6 @@ import java.util.List;
 public class MensajeDAO {
 
     public void guardarMensajePrivado(int idOrigen, int idDestino, String contenido) {
-        // IMPORTANTE: Ponemos id_destino_grupo a NULL explícitamente
         String sql = "INSERT INTO mensajes (id_origen, id_destino_usuario, id_destino_grupo, contenido) VALUES (?, ?, NULL, ?)";
 
         try (Connection conn = GestorBaseDatos.conectar();

@@ -7,6 +7,13 @@ import java.util.List;
 
 public class GrupoDAO {
 
+    private Connection conexion;
+
+    // CONSTRUCTOR QUE RECIBE LA CONEXIÓN
+    public GrupoDAO(Connection conexion) {
+        this.conexion = conexion;
+    }
+
     public boolean crearGrupo(String nombreGrupo, int idAdmin) {
         String sqlGrupo = "INSERT INTO grupos (nombre_grupo, id_admin) VALUES (?, ?)";
         String sqlMiembro = "INSERT INTO miembros_grupo (id_grupo, id_usuario) VALUES (?, ?)";
@@ -69,13 +76,26 @@ public class GrupoDAO {
         return grupos;
     }
 
-    public boolean añadirMiembro(int idGrupo, int idUsuario) {
+    public boolean agregarMiembro(int idGrupo, int idUsuario) {
         String sql = "INSERT OR IGNORE INTO miembros_grupo (id_grupo, id_usuario) VALUES (?, ?)";
         try (Connection conn = GestorBaseDatos.conectar();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idGrupo);
             pstmt.setInt(2, idUsuario);
             return pstmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public boolean eliminarUsuarioDeGrupo(int idUsuario, int idGrupo) {
+        String sql = "DELETE FROM miembros_grupo WHERE id_usuario = ? AND id_grupo = ?";
+        try (Connection conn = GestorBaseDatos.conectar();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, idUsuario);
+            ps.setInt(2, idGrupo);
+            return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             e.printStackTrace();
             return false;
