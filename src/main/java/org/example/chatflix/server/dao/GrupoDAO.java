@@ -22,7 +22,7 @@ public class GrupoDAO {
 
         try {
             conn = GestorBaseDatos.conectar();
-            conn.setAutoCommit(false); // INICIO TRANSACCIÓN
+            conn.setAutoCommit(false);
 
             // 1. Insertar el Grupo
             PreparedStatement pstmtGrupo = conn.prepareStatement(sqlGrupo, Statement.RETURN_GENERATED_KEYS);

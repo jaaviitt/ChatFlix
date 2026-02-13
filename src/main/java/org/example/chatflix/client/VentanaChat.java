@@ -29,7 +29,7 @@ public class VentanaChat {
 
     // Datos locales
     private Set<String> setFavoritos = new HashSet<>();
-    private String destinatarioActual = null; // ESTA VARIABLE ES LA CLAVE
+    private String destinatarioActual = null;
 
     public VentanaChat(Stage stage, Cliente clienteLogica, String usuarioPropio) {
         this.stage = stage;
@@ -140,7 +140,6 @@ public class VentanaChat {
 
     // --- MÉTODOS PÚBLICOS ---
 
-    // ¡¡ESTE ES EL MÉTODO QUE NECESITA CLIENTE.JAVA PARA FILTRAR!!
     public String getDestinatarioActual() {
         return this.destinatarioActual;
     }
@@ -157,7 +156,7 @@ public class VentanaChat {
         lblTxt.setStyle("-fx-font-size: 13px;"); // Un poco más grande para leer bien
 
         // 3. Contenedor vertical (VBox) para poner uno sobre otro
-        VBox box = new VBox(2, lblRem, lblTxt); // 2px de separación
+        VBox box = new VBox(2, lblRem, lblTxt);
         box.setPadding(new Insets(8, 12, 8, 12));
 
         // Asignamos la clase CSS de la burbuja
@@ -289,8 +288,6 @@ public class VentanaChat {
             clienteLogica.gestionarGrupo(destinatarioActual.replace("[Grupo] ", ""));
     }
 
-    // EN VentanaChat.java (Abajo del todo)
-
     private Button crearBotonEmoji() {
         Button btn = new Button("☺");
         btn.getStyleClass().add("boton-icono");
@@ -314,7 +311,6 @@ public class VentanaChat {
             menu.getItems().add(item);
         }
 
-        // Al hacer clic, mostramos el menú encima del botón
         btn.setOnAction(e -> menu.show(btn, javafx.geometry.Side.TOP, 0, 0));
         return btn;
     }

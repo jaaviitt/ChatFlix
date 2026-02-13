@@ -7,7 +7,6 @@ import java.net.Socket;
 import java.sql.SQLException;
 import java.util.List;
 
-// --- AÑADIDO ESTE IMPORT ---
 import org.example.chatflix.server.dao.MensajeDAO;
 import org.example.chatflix.server.dao.UsuarioDAO;
 import org.example.chatflix.server.dao.GrupoDAO;
@@ -22,7 +21,7 @@ public class HiloCliente implements Runnable {
     // DAOs
     private UsuarioDAO uDao;
     private GrupoDAO gDao;
-    private MensajeDAO mDao; // --- AÑADIDA DECLARACIÓN QUE FALTABA ---
+    private MensajeDAO mDao;
 
     private Usuario usuario;
 
@@ -32,7 +31,7 @@ public class HiloCliente implements Runnable {
             // Inicializamos TODOS los DAOs
             this.uDao = new UsuarioDAO(GestorBaseDatos.conectar());
             this.gDao = new GrupoDAO(GestorBaseDatos.conectar());
-            this.mDao = new MensajeDAO(GestorBaseDatos.conectar()); // --- AÑADIDA INICIALIZACIÓN ---
+            this.mDao = new MensajeDAO(GestorBaseDatos.conectar());
 
             this.entrada = new DataInputStream(socket.getInputStream());
             this.salida = new DataOutputStream(socket.getOutputStream());
@@ -46,7 +45,6 @@ public class HiloCliente implements Runnable {
         try {
             while (true) {
                 String mensajeRecibido = entrada.readUTF();
-                // System.out.println("Comando: " + mensajeRecibido); // Descomenta si quieres depurar
 
                 if (mensajeRecibido.startsWith("LOGIN|")) {
                     String[] partes = mensajeRecibido.split("\\|");
@@ -111,7 +109,6 @@ public class HiloCliente implements Runnable {
                     int idDestino = uDao.obtenerIdPorNombre(destino);
 
                     if(idDestino != -1) {
-                        // CORRECCIÓN: Añadimos "TEXTO" como 4º argumento
                         mDao.guardarMensaje(this.usuario.getId(), idDestino, texto, "TEXTO");
                     }
 
@@ -155,7 +152,6 @@ public class HiloCliente implements Runnable {
                     String nombreDestinoLimpio = destino.replace("[Grupo] ", ""); // Aquí sí limpiamos para buscar en BD
 
                     if (destino.startsWith("[Grupo] ")) {
-                        // AHORA SÍ ENTRARÁ AQUÍ
                         int idGrupo = gDao.obtenerIdPorNombre(nombreDestinoLimpio);
                         if(idGrupo != -1) {
                             mDao.guardarMensajeGrupo(this.usuario.getId(), idGrupo, base64, "ARCHIVO");

@@ -109,7 +109,7 @@ public class Cliente extends Application {
                     entrada.readFully(buffer);
                     String base64 = new String(buffer); // Reconstruimos el Base64
 
-                    // 2. LÓGICA VISUAL (Igual que antes)
+                    // 2. LÓGICA VISUAL
                     String chatAbierto = ventanaChat.getDestinatarioActual();
                     boolean esMio = usuarioOrigen.equals("Yo") || usuarioOrigen.equals(nombreUsuario);
 
@@ -138,7 +138,7 @@ public class Cliente extends Application {
 
         boolean esMio = msg.startsWith("Yo:") || msg.contains(nombreUsuario + ":");
 
-        // --- LÓGICA DE PARSEO (LIMPIEZA) ---
+        // --- LÓGICA DE PARSEO ---
 
         if (msg.startsWith("Yo:")) {
             remitenteVisual = "Yo";
@@ -147,42 +147,35 @@ public class Cliente extends Application {
         }
         // CASO GRUPO: "MSG|[Grupo] NombreGrupo: Usuario: Texto"
         else if (msg.startsWith("[Grupo] ")) {
-            // Buscamos los separadores ": "
-            // Estructura esperada: [Grupo] Boinas: Amador: Hola que tal
 
             int primerDosPuntos = msg.indexOf(":");
             int segundoDosPuntos = msg.indexOf(":", primerDosPuntos + 1);
 
             if (primerDosPuntos != -1 && segundoDosPuntos != -1) {
-                // Sacamos el nombre del grupo para la lógica: "[Grupo] Boinas"
                 chatRemitenteLogico = msg.substring(0, primerDosPuntos).trim();
 
-                // Sacamos el nombre del usuario para pintar: "Amador"
                 remitenteVisual = msg.substring(primerDosPuntos + 1, segundoDosPuntos).trim();
 
-                // Sacamos el texto limpio: "Hola que tal"
                 contenidoVisual = msg.substring(segundoDosPuntos + 1).trim();
             } else {
-                // Si falla el formato, pintamos lo que haya
                 chatRemitenteLogico = msg;
             }
         }
-        // CASO PRIVADO: "MSG|Fina: Hola"
+        // CASO PRIVADO
         else if (msg.contains(":")) {
             String[] partes = msg.split(":", 2);
-            remitenteVisual = partes[0].trim(); // "Fina"
-            contenidoVisual = partes[1].trim(); // "Hola"
+            remitenteVisual = partes[0].trim();
+            contenidoVisual = partes[1].trim();
             chatRemitenteLogico = remitenteVisual;
         }
 
-        // --- FILTRO VISUAL (¿PINTAMOS O NO?) ---
+        // --- FILTRO VISUAL ---
         String chatAbierto = ventanaChat.getDestinatarioActual();
 
         // Variables finales para lambda
         String finalRemitente = remitenteVisual;
         String finalContenido = contenidoVisual;
 
-        // Si es mío, O si el chat que envía el mensaje coincide con el que tengo abierto
         if (esMio || (chatAbierto != null && chatAbierto.equals(chatRemitenteLogico))) {
             Platform.runLater(() -> ventanaChat.agregarMensajeVisual(finalRemitente, finalContenido, esMio));
         }
@@ -250,7 +243,6 @@ public class Cliente extends Application {
                     byte[] datosBase64 = base64.getBytes();
 
                     // 3. Enviar Cabecera (comando corto)
-                    // CORREGIDO: Enviamos 'destino' TAL CUAL (con el [Grupo] si lo tiene)
                     salida.writeUTF("FILE_B64|" + destino + "|" + f.getName());
 
                     // 4. Enviar TAMAÑO y DATOS
@@ -269,8 +261,6 @@ public class Cliente extends Application {
         TextInputDialog d = new TextInputDialog(); d.setTitle("Crear Grupo"); d.setContentText("Nombre:");
         d.showAndWait().ifPresent(n -> enviarComando("CREAR_GRUPO|" + n.trim()));
     }
-
-    // EN Cliente.java
 
     public void gestionarGrupo(String grupo) {
         // Creamos un diálogo con botones personalizados

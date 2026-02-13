@@ -48,7 +48,7 @@ public class UsuarioDAO {
         return -1;
     }
 
-    // --- GESTIÓN DE FAVORITOS (Aquí estaba el error principal) ---
+    // --- GESTIÓN DE FAVORITOS ---
 
     public boolean agregarFavorito(int idUsuario, int idFavorito) {
         String sql = "INSERT OR IGNORE INTO favoritos (id_usuario, id_favorito) VALUES (?, ?)";
@@ -56,7 +56,7 @@ public class UsuarioDAO {
             ps.setInt(1, idUsuario);
             ps.setInt(2, idFavorito);
             int filas = ps.executeUpdate();
-            if(filas > 0) System.out.println("✅ DAO: Favorito agregado correctamente.");
+            if(filas > 0) System.out.println("DAO: Favorito agregado correctamente.");
             return filas > 0;
         } catch (SQLException e) {
             e.printStackTrace();
@@ -84,9 +84,8 @@ public class UsuarioDAO {
             while (rs.next()) {
                 lista.add(rs.getString("nombre_usuario"));
             }
-            System.out.println("📥 DAO: Recuperados " + lista.size() + " favoritos.");
         } catch (SQLException e) {
-            System.err.println("❌ DAO ERROR GET FAVS: " + e.getMessage());
+            System.err.println("DAO ERROR GET FAVS: " + e.getMessage());
         }
         return lista;
     }
