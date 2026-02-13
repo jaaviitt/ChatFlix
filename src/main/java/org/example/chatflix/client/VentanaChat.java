@@ -7,7 +7,6 @@ import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
-
 import java.util.HashSet;
 import java.util.Set;
 
@@ -30,7 +29,7 @@ public class VentanaChat {
 
     // Datos locales
     private Set<String> setFavoritos = new HashSet<>();
-    private String destinatarioActual = null;
+    private String destinatarioActual = null; // ESTA VARIABLE ES LA CLAVE
 
     public VentanaChat(Stage stage, Cliente clienteLogica, String usuarioPropio) {
         this.stage = stage;
@@ -62,14 +61,11 @@ public class VentanaChat {
         // 3. PANEL IZQUIERDO
         listaGrupos = new ListView<>();
         listaGrupos.setPrefHeight(100);
-        // A) LISTENER DE GRUPOS
+        // Listener GRUPOS
         listaGrupos.getSelectionModel().selectedItemProperty().addListener((o, ov, nv) -> {
-            if (nv != null) {
-                // Limpiamos SOLO las otras dos listas
+            if(nv!=null) {
                 listaContactos.getSelectionModel().clearSelection();
                 listaFavoritos.getSelectionModel().clearSelection();
-
-                // Llamamos a la lógica (sin borrar esta lista)
                 seleccionarChat(nv, true);
                 btnGestionar.setVisible(true);
             }
@@ -77,28 +73,24 @@ public class VentanaChat {
 
         listaFavoritos = new ListView<>();
         listaFavoritos.setPrefHeight(100);
-        configurarCelda(listaFavoritos, true); // Es favoritos
-        // B) LISTENER DE FAVORITOS
+        configurarCelda(listaFavoritos, true);
+        // Listener FAVORITOS
         listaFavoritos.getSelectionModel().selectedItemProperty().addListener((o, ov, nv) -> {
-            if (nv != null) {
-                // Limpiamos SOLO las otras dos listas
-                listaGrupos.getSelectionModel().clearSelection();
+            if(nv!=null) {
                 listaContactos.getSelectionModel().clearSelection();
-
+                listaGrupos.getSelectionModel().clearSelection();
                 seleccionarChat(nv, false);
                 btnGestionar.setVisible(false);
             }
         });
 
         listaContactos = new ListView<>();
-        configurarCelda(listaContactos, false); // No es favoritos
-        // C) LISTENER DE CONTACTOS
+        configurarCelda(listaContactos, false);
+        // Listener TODOS
         listaContactos.getSelectionModel().selectedItemProperty().addListener((o, ov, nv) -> {
-            if (nv != null) {
-                // Limpiamos SOLO las otras dos listas
+            if(nv!=null) {
                 listaGrupos.getSelectionModel().clearSelection();
                 listaFavoritos.getSelectionModel().clearSelection();
-
                 seleccionarChat(nv, false);
                 btnGestionar.setVisible(false);
             }
@@ -120,12 +112,16 @@ public class VentanaChat {
         // 4. INFERIOR
         campoMensaje = new TextField();
         HBox.setHgrow(campoMensaje, Priority.ALWAYS);
+
         Button btnEnviar = new Button("➤"); btnEnviar.getStyleClass().add("boton-enviar");
         btnEnviar.setOnAction(e -> enviar());
+
         Button btnFoto = new Button("📎"); btnFoto.getStyleClass().add("boton-icono");
         btnFoto.setOnAction(e -> clienteLogica.enviarArchivo(stage, destinatarioActual));
 
-        HBox panelInf = new HBox(10, btnFoto, campoMensaje, btnEnviar);
+        Button btnEmoji = crearBotonEmoji();
+
+        HBox panelInf = new HBox(10, btnEmoji, btnFoto, campoMensaje, btnEnviar);
         panelInf.setPadding(new Insets(15));
         panelInf.setAlignment(Pos.CENTER);
 
@@ -142,25 +138,44 @@ public class VentanaChat {
         stage.centerOnScreen();
     }
 
-    // --- MÉTODOS PÚBLICOS PARA QUE EL CLIENTE LOS LLAME ---
+    // --- MÉTODOS PÚBLICOS ---
+
+    // ¡¡ESTE ES EL MÉTODO QUE NECESITA CLIENTE.JAVA PARA FILTRAR!!
+    public String getDestinatarioActual() {
+        return this.destinatarioActual;
+    }
 
     public void agregarMensajeVisual(String remitente, String texto, boolean esMio) {
+        // 1. Etiqueta del NOMBRE (Arriba, negrita y pequeñito)
         Label lblRem = new Label(esMio ? "Yo" : remitente);
-        lblRem.setStyle("-fx-font-weight: bold; -fx-font-size: 11px;");
-        Label lblTxt = new Label(texto);
-        lblTxt.setWrapText(true); lblTxt.setMaxWidth(350);
+        lblRem.setStyle("-fx-font-weight: bold; -fx-font-size: 10px; -fx-text-fill: " + (esMio ? "#1e5823" : "#444") + ";");
 
-        VBox box = new VBox(3, lblRem, lblTxt);
-        box.setPadding(new Insets(8,12,8,12));
+        // 2. Etiqueta del MENSAJE (Abajo, normal)
+        Label lblTxt = new Label(texto);
+        lblTxt.setWrapText(true);
+        lblTxt.setMaxWidth(350);
+        lblTxt.setStyle("-fx-font-size: 13px;"); // Un poco más grande para leer bien
+
+        // 3. Contenedor vertical (VBox) para poner uno sobre otro
+        VBox box = new VBox(2, lblRem, lblTxt); // 2px de separación
+        box.setPadding(new Insets(8, 12, 8, 12));
+
+        // Asignamos la clase CSS de la burbuja
         box.getStyleClass().add(esMio ? "burbuja-enviada" : "burbuja-recibida");
 
+        // 4. Alineación en el chat
         HBox fila = new HBox(box);
         fila.setAlignment(esMio ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
-        if(esMio) HBox.setMargin(box, new Insets(5,10,5,50));
-        else HBox.setMargin(box, new Insets(5,50,5,10));
+
+        // Márgenes para separar del borde
+        if (esMio) HBox.setMargin(box, new Insets(5, 10, 5, 50));
+        else HBox.setMargin(box, new Insets(5, 50, 5, 10));
 
         contenedorMensajes.getChildren().add(fila);
-        scrollMensajes.layout(); scrollMensajes.setVvalue(1.0);
+
+        // Auto-scroll hacia abajo
+        scrollMensajes.layout();
+        scrollMensajes.setVvalue(1.0);
     }
 
     public void agregarImagenVisual(byte[] data, String remitente, boolean esMio) {
@@ -181,6 +196,9 @@ public class VentanaChat {
     }
 
     public void actualizarLista(String nombre, String estado) {
+        // No mostrarme a mí mismo
+        if(nombre.equals(usuarioPropio)) return;
+
         actualizarItem(listaContactos, nombre, estado);
         if(setFavoritos.contains(nombre)) actualizarItem(listaFavoritos, nombre, estado);
     }
@@ -201,8 +219,6 @@ public class VentanaChat {
     }
 
     private void actualizarItem(ListView<String> lista, String nombre, String estado) {
-        if (nombre.equals(usuarioPropio)) return;
-
         String nuevo = nombre + (estado.equals("ON") ? " (Online)" : " (Offline)");
         int idx = -1;
         for(int i=0; i<lista.getItems().size(); i++) {
@@ -213,10 +229,13 @@ public class VentanaChat {
     }
 
     private void seleccionarChat(String sel, boolean esGrupo) {
+        // IMPORTANTE: Limpiamos los mensajes anteriores
         contenedorMensajes.getChildren().clear();
 
         String nombreLimpio = sel.split(" \\(")[0];
+        // Aquí seteamos la variable que usa el filtro
         this.destinatarioActual = esGrupo ? "[Grupo] " + nombreLimpio : nombreLimpio;
+
         lblChatHeader.setText(esGrupo ? "Grupo: " + nombreLimpio : "Chat con " + nombreLimpio);
         clienteLogica.pedirHistorial(this.destinatarioActual);
     }
@@ -268,5 +287,35 @@ public class VentanaChat {
     private void gestionarGrupo() {
         if(destinatarioActual!=null && destinatarioActual.startsWith("[Grupo] "))
             clienteLogica.gestionarGrupo(destinatarioActual.replace("[Grupo] ", ""));
+    }
+
+    // EN VentanaChat.java (Abajo del todo)
+
+    private Button crearBotonEmoji() {
+        Button btn = new Button("☺");
+        btn.getStyleClass().add("boton-icono");
+
+        // Creamos un menú emergente
+        ContextMenu menu = new ContextMenu();
+
+        // Lista de emojis populares
+        String[] emojis = {
+                "😀", "😂", "😍", "😎", "😭", "😡", "👍", "👎",
+                "🎉", "❤", "💔", "🔥", "💩", "👻", "👀", "👋"
+        };
+
+        for (String e : emojis) {
+            MenuItem item = new MenuItem(e);
+            item.setStyle("-fx-font-size: 15px;");
+            item.setOnAction(event -> {
+                campoMensaje.appendText(e); // Añade el emoji al texto
+                campoMensaje.requestFocus(); // Vuelve el foco al campo
+            });
+            menu.getItems().add(item);
+        }
+
+        // Al hacer clic, mostramos el menú encima del botón
+        btn.setOnAction(e -> menu.show(btn, javafx.geometry.Side.TOP, 0, 0));
+        return btn;
     }
 }

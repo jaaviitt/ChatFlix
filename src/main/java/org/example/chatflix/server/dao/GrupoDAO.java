@@ -133,4 +133,19 @@ public class GrupoDAO {
         }
         return miembros;
     }
+
+    public List<String> obtenerGruposDeUsuario(int idUsuario) {
+        List<String> grupos = new ArrayList<>();
+        String sql = "SELECT g.nombre_grupo FROM grupos g " +
+                "JOIN miembros_grupo mg ON g.id_grupo = mg.id_grupo " +
+                "WHERE mg.id_usuario = ?";
+        try (PreparedStatement ps = conexion.prepareStatement(sql)) {
+            ps.setInt(1, idUsuario);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                grupos.add(rs.getString("nombre_grupo"));
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return grupos;
+    }
 }

@@ -6,6 +6,11 @@ import javafx.scene.control.Label;
 import javafx.scene.control.TextInputDialog;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import javafx.scene.control.Alert;
+
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.TextInputDialog;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -91,8 +96,34 @@ public class Cliente extends Application {
                     String g = msg.split("\\|")[1];
                     Platform.runLater(() -> ventanaChat.agregarGrupo(g));
                 }
-                else if (msg.startsWith("FILE_RECIBIDO|")) {
-                    procesarArchivo(msg);
+
+                else if (msg.startsWith("FILE_RX|")) {
+                    // Formato: FILE_RX|RemitenteChat|UsuarioOrigen
+                    String[] p = msg.split("\\|");
+                    String remitenteChat = p[1];
+                    String usuarioOrigen = p[2];
+
+                    // 1. LEER EL CONTENIDO GIGANTE APARTE
+                    int tamano = entrada.readInt();
+                    byte[] buffer = new byte[tamano];
+                    entrada.readFully(buffer);
+                    String base64 = new String(buffer); // Reconstruimos el Base64
+
+                    // 2. LÓGICA VISUAL (Igual que antes)
+                    String chatAbierto = ventanaChat.getDestinatarioActual();
+                    boolean esMio = usuarioOrigen.equals("Yo") || usuarioOrigen.equals(nombreUsuario);
+
+                    if (remitenteChat.startsWith("[Grupo] ")) {
+                        if (chatAbierto != null && chatAbierto.equals(remitenteChat)) {
+                            byte[] imgData = java.util.Base64.getDecoder().decode(base64);
+                            Platform.runLater(() -> ventanaChat.agregarImagenVisual(imgData, usuarioOrigen, esMio));
+                        }
+                    } else {
+                        if (esMio || (chatAbierto != null && chatAbierto.equals(remitenteChat))) {
+                            byte[] imgData = java.util.Base64.getDecoder().decode(base64);
+                            Platform.runLater(() -> ventanaChat.agregarImagenVisual(imgData, usuarioOrigen, esMio));
+                        }
+                    }
                 }
             }
         } catch (IOException e) { System.out.println("Desconectado"); }
@@ -100,27 +131,89 @@ public class Cliente extends Application {
 
     // --- MÉTODOS DE APOYO ---
     private void procesarMensajeTexto(String msg) {
-        String remitente = "Sistema", contenido = msg;
+        // Variables por defecto
+        String remitenteVisual = "Sistema";
+        String contenidoVisual = msg;
+        String chatRemitenteLogico = "Sistema"; // Para saber si es el chat que tenemos abierto
+
         boolean esMio = msg.startsWith("Yo:") || msg.contains(nombreUsuario + ":");
 
-        if (msg.startsWith("Yo:")) { remitente = "Yo"; contenido = msg.substring(3).trim(); }
+        // --- LÓGICA DE PARSEO (LIMPIEZA) ---
+
+        if (msg.startsWith("Yo:")) {
+            remitenteVisual = "Yo";
+            contenidoVisual = msg.substring(3).trim();
+            chatRemitenteLogico = "Yo"; // Siempre se pinta
+        }
+        // CASO GRUPO: "MSG|[Grupo] NombreGrupo: Usuario: Texto"
+        else if (msg.startsWith("[Grupo] ")) {
+            // Buscamos los separadores ": "
+            // Estructura esperada: [Grupo] Boinas: Amador: Hola que tal
+
+            int primerDosPuntos = msg.indexOf(":");
+            int segundoDosPuntos = msg.indexOf(":", primerDosPuntos + 1);
+
+            if (primerDosPuntos != -1 && segundoDosPuntos != -1) {
+                // Sacamos el nombre del grupo para la lógica: "[Grupo] Boinas"
+                chatRemitenteLogico = msg.substring(0, primerDosPuntos).trim();
+
+                // Sacamos el nombre del usuario para pintar: "Amador"
+                remitenteVisual = msg.substring(primerDosPuntos + 1, segundoDosPuntos).trim();
+
+                // Sacamos el texto limpio: "Hola que tal"
+                contenidoVisual = msg.substring(segundoDosPuntos + 1).trim();
+            } else {
+                // Si falla el formato, pintamos lo que haya
+                chatRemitenteLogico = msg;
+            }
+        }
+        // CASO PRIVADO: "MSG|Fina: Hola"
         else if (msg.contains(":")) {
             String[] partes = msg.split(":", 2);
-            remitente = partes[0].replace("(PV)", "").replace("(Grp)", "").replace("[Grupo]", "").trim();
-            contenido = partes[1].trim();
+            remitenteVisual = partes[0].trim(); // "Fina"
+            contenidoVisual = partes[1].trim(); // "Hola"
+            chatRemitenteLogico = remitenteVisual;
         }
 
-        String finalRemitente = remitente; String finalContenido = contenido;
-        Platform.runLater(() -> ventanaChat.agregarMensajeVisual(finalRemitente, finalContenido, esMio));
+        // --- FILTRO VISUAL (¿PINTAMOS O NO?) ---
+        String chatAbierto = ventanaChat.getDestinatarioActual();
+
+        // Variables finales para lambda
+        String finalRemitente = remitenteVisual;
+        String finalContenido = contenidoVisual;
+
+        // Si es mío, O si el chat que envía el mensaje coincide con el que tengo abierto
+        if (esMio || (chatAbierto != null && chatAbierto.equals(chatRemitenteLogico))) {
+            Platform.runLater(() -> ventanaChat.agregarMensajeVisual(finalRemitente, finalContenido, esMio));
+        }
     }
 
-    private void procesarArchivo(String msg) throws IOException {
-        String[] p = msg.split("\\|");
-        int size = Integer.parseInt(p[3]);
-        byte[] data = new byte[size];
-        entrada.readFully(data);
-        boolean esMio = p[1].equals("Yo") || p[1].equals(nombreUsuario);
-        Platform.runLater(() -> ventanaChat.agregarImagenVisual(data, p[1], esMio));
+    private void procesarArchivo(String msg) {
+        try {
+            // Formato recibido: FILE_RECIBIDO|RemitenteChat|UsuarioQueEnvia|Base64
+            String[] p = msg.split("\\|", 4);
+            String remitenteChat = p[1]; // Quien me habla (o el grupo)
+            String usuarioOrigen = p[2]; // Quien mandó la foto
+            String base64 = p[3];
+
+            // Filtro visual (igual que el de texto)
+            String chatAbierto = ventanaChat.getDestinatarioActual();
+            boolean esMio = usuarioOrigen.equals("Yo") || usuarioOrigen.equals(nombreUsuario);
+
+            // Si es grupo, ajustamos el remitente para el filtro
+            if (remitenteChat.startsWith("[Grupo] ")) {
+                if (chatAbierto != null && chatAbierto.equals(remitenteChat)) {
+                    byte[] data = java.util.Base64.getDecoder().decode(base64);
+                    Platform.runLater(() -> ventanaChat.agregarImagenVisual(data, usuarioOrigen, esMio));
+                }
+            } else {
+                // Privado
+                if (esMio || (chatAbierto != null && chatAbierto.equals(remitenteChat))) {
+                    byte[] data = java.util.Base64.getDecoder().decode(base64);
+                    Platform.runLater(() -> ventanaChat.agregarImagenVisual(data, usuarioOrigen, esMio));
+                }
+            }
+        } catch (Exception e) { e.printStackTrace(); }
     }
 
     public void enviarMensaje(String destino, String texto) {
@@ -150,11 +243,24 @@ public class Cliente extends Application {
             new Thread(() -> {
                 try {
                     byte[] b = Files.readAllBytes(f.toPath());
-                    String destLimpio = destino.replace("[Grupo] ", "");
-                    salida.writeUTF("FILE|" + destLimpio + "|" + f.getName() + "|" + b.length);
-                    salida.write(b); salida.flush();
+                    // 1. Convertir imagen a texto Base64
+                    String base64 = java.util.Base64.getEncoder().encodeToString(b);
+
+                    // 2. Preparar los bytes del texto
+                    byte[] datosBase64 = base64.getBytes();
+
+                    // 3. Enviar Cabecera (comando corto)
+                    // CORREGIDO: Enviamos 'destino' TAL CUAL (con el [Grupo] si lo tiene)
+                    salida.writeUTF("FILE_B64|" + destino + "|" + f.getName());
+
+                    // 4. Enviar TAMAÑO y DATOS
+                    salida.writeInt(datosBase64.length);
+                    salida.write(datosBase64);
+                    salida.flush();
+
+                    // Pintarlo en mi pantalla directamente
                     Platform.runLater(() -> ventanaChat.agregarImagenVisual(b, "Yo", true));
-                } catch(Exception e){}
+                } catch(Exception e){ e.printStackTrace(); }
             }).start();
         }
     }
@@ -164,9 +270,37 @@ public class Cliente extends Application {
         d.showAndWait().ifPresent(n -> enviarComando("CREAR_GRUPO|" + n.trim()));
     }
 
+    // EN Cliente.java
+
     public void gestionarGrupo(String grupo) {
-        TextInputDialog d = new TextInputDialog(); d.setTitle("Expulsar"); d.setContentText("Usuario a echar de " + grupo + ":");
-        d.showAndWait().ifPresent(u -> enviarComando("KICK_USER|" + grupo + "|" + u.trim()));
+        // Creamos un diálogo con botones personalizados
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Gestión de Grupo: " + grupo);
+        alert.setHeaderText("¿Qué quieres hacer con el grupo " + grupo + "?");
+        alert.setContentText("Elige una opción:");
+
+        javafx.scene.control.ButtonType btnInvitar = new javafx.scene.control.ButtonType("Invitar Usuario");
+        javafx.scene.control.ButtonType btnEchar = new javafx.scene.control.ButtonType("Expulsar Miembro");
+        javafx.scene.control.ButtonType btnCancelar = new javafx.scene.control.ButtonType("Cancelar", javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE);
+
+        alert.getButtonTypes().setAll(btnInvitar, btnEchar, btnCancelar);
+
+        alert.showAndWait().ifPresent(tipo -> {
+            if (tipo == btnInvitar) {
+                // Diálogo para escribir el nombre a invitar
+                TextInputDialog d = new TextInputDialog();
+                d.setTitle("Invitar a " + grupo);
+                d.setContentText("Nombre del usuario a invitar:");
+                d.showAndWait().ifPresent(u -> enviarComando("INVITAR_GRUPO|" + grupo + "|" + u.trim()));
+            }
+            else if (tipo == btnEchar) {
+                // Diálogo para escribir a quién echar
+                TextInputDialog d = new TextInputDialog();
+                d.setTitle("Expulsar de " + grupo);
+                d.setContentText("Nombre del usuario a expulsar:");
+                d.showAndWait().ifPresent(u -> enviarComando("KICK_USER|" + grupo + "|" + u.trim()));
+            }
+        });
     }
 
     private void cerrar() { try { if(socket!=null) socket.close(); } catch(IOException e){} }
